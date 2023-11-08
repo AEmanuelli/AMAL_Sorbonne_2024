@@ -14,7 +14,7 @@ b = torch.randn(3)
 epsilon = 0.05
 
 writer = SummaryWriter()
-for n_iter in range(100):
+for n_iter in range(500):
     ctx_MSE = Context()
     ctx_linear = Context()
     ## Calcul du forward (loss)

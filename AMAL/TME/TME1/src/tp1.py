@@ -28,7 +28,8 @@ class MSE(Function):
     def forward(ctx, yhat, y):
         ## Garde les valeurs nécessaires pour le backwards
         ctx.save_for_backward(yhat, y)
-        return (yhat - y) ** 2
+        n = yhat.size(0)  # Number of elements
+        return ((yhat - y) ** 2)
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -50,7 +51,7 @@ class Linear(Function):
     def backward(ctx, grad_output):
         ## Calcul du gradient du module par rapport a chaque groupe d'entrées
         X, W, _ = ctx.saved_tensors
-        # grad_output :            (n, p) # Mais p du module précédent ?
+        # grad_output :            (n, p) # Mais p du module précédent ? Un gradient par sortie de la loss 
         d_x = grad_output @ W.T  # (n, d)
         d_w = X.T @ grad_output  # (d, p)
         d_b = grad_output  # (n, p)
