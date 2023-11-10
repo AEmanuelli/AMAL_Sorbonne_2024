@@ -193,3 +193,4 @@ for x, _ in sample_loader:
 images = outputs.reshape((8, 28, 28)).unsqueeze(1).repeat(1, 3, 1, 1)
 images = make_grid(images)
 writer.add_image(f"samples/Reconstruction last epoch", images, 0)
+
