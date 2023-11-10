@@ -286,17 +286,18 @@ state = State(model, optimizer, device, savepath)
 
 # Boucle d'entraînement
 num_epochs = 5  # Nombre d'époques
-for epoch in range(num_epochs):
+for epoch in range(state.epoch, num_epochs):
     total_loss = 0
     total_loss_test = 0
     state.model.train()
     for images, labels in data_train:
-        optimizer.zero_grad()
-        outputs = model(images)
+        state.optim.zero_grad()
+        outputs = state.model(images)
         loss = criterion(outputs, labels)
         loss.backward()
-        optimizer.step()
+        state.optim.step()
         total_loss += loss.item()
+        state.iteration += 1
     print(f"Époque [{epoch+1}/{num_epochs}], Perte_train: {total_loss/len(data_train)}")
     
     # Save the state at the end of each epoch
@@ -310,10 +311,11 @@ for epoch in range(num_epochs):
         }, fp)
 
     state.model.eval()
-    for images, labels in data_test:
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        total_loss_test += loss.item()
+    with torch.no_grad():
+        for images, labels in data_test:
+            outputs = state.model(images)
+            loss = criterion(outputs, labels)
+            total_loss_test += loss.item()
     print(f"Époque [{epoch+1}/{num_epochs}], Perte_test: {total_loss_test/len(data_test)}")
     
 
