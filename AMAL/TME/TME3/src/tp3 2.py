@@ -1,10 +1,11 @@
 from icecream import ic
+import numpy as np
 from torch.utils.data import DataLoader
 import torch
 from torchvision.utils import make_grid
 from torch.utils.tensorboard import SummaryWriter
 import datetime
-
+from tqdm import tqdm
 from utils import *
 
 # Téléchargement des données
@@ -22,7 +23,7 @@ images = torch.tensor(train_images[0:8]).unsqueeze(1).repeat(1,3,1,1).double()/2
 # Permet de fabriquer une grille d'images
 images = make_grid(images)
 # Affichage avec tensorboard
-writer.add_image(f'samples', images, 0)
+# writer.add_image(f'samples', images, 0)
 
 
 savepath = Path("model.pch")
@@ -68,11 +69,19 @@ dataset = MonDataset(train_images, train_labels)
 data_train = DataLoader(dataset, batch_size=64, shuffle=True)  # Assuming you have a batch size of 64 for training
 data_test = DataLoader(dataset, batch_size=64, shuffle=False)  # For evaluation
 
-# Initialize the model, loss criterion, optimizer, and TensorBoard writer
-autoencodeur = Autoencodeur()
-criterion = nn.MSELoss()
-optimizer = torch.optim.Adam(autoencodeur.parameters(), lr=1e-3)
-writer = SummaryWriter("runs/autoencoder_experiment_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+
+#Automatically get data dimensions 
+first_batch, _ = next(iter(data_train))
+input_size = first_batch.view(first_batch.size(0), -1).size(1)
+
+
+
+
+# # Initialize the model, loss criterion, optimizer, and TensorBoard writer
+# autoencodeur = Autoencodeur(input_size)
+# criterion = nn.MSELoss()
+# optimizer = torch.optim.Adam(autoencodeur.parameters(), lr=1e-3)
+# writer = SummaryWriter("runs/autoencoder_experiment_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 
 # # Training loop
 # num_epochs = 10
@@ -102,7 +111,7 @@ writer = SummaryWriter("runs/autoencoder_experiment_" + datetime.datetime.now().
 
 #     print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {loss.item():.4f}')
 
-# Visualize some sample reconstructions after the last epoch
+# #Visualize some sample reconstructions after the last epoch
 # autoencodeur.eval()  # Set the model to evaluation mode
 # with torch.no_grad():
 #     for x, _ in data_test:
@@ -123,40 +132,172 @@ writer = SummaryWriter("runs/autoencoder_experiment_" + datetime.datetime.now().
 # writer.close()  # Close the writer when you're done
 
 
-#######Question 3
-
-from pathlib import Path
-import torch
-
-savepath = Path("model.pch")
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-# Prepare the dataset and dataloader
-dataset = MonDataset(train_images, train_labels)
-data_train = DataLoader(dataset, batch_size=64, shuffle=True)  # Assuming you have a batch size of 64 for training
-data_test = DataLoader(dataset, batch_size=64, shuffle=False)  # For evaluation
-
+# #######Question 3
 # Initialize the model, loss criterion, optimizer, and TensorBoard writer
-model = Autoencodeur()
+model = Autoencodeur(input_size)
 criterion = nn.MSELoss()
-optim = torch.optim.Adam(autoencodeur.parameters(), lr=1e-3)
+optim = torch.optim.Adam(model.parameters(), lr=1e-3)
 
+
+savepath = Path("AMAL/TME/TME3/model.pch")
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # Create the state instance
 state = State(model, optim, device, savepath)
 
 ITERATIONS = 25
 
+
 for epoch in range(state.epoch, ITERATIONS):
-    for x, y in data_train:
+    # Training
+    state.model.train()
+    train_loss = 0.0
+    for x, _ in tqdm(data_train, desc=f"Epoch {epoch + 1}/{ITERATIONS}"):
         state.optim.zero_grad()
-        x = x.to(device)
-        y = y.to(device)
-        ic(x.size(), y.size())
         xhat = state.model(x)
-        loss = criterion(xhat, y)
+        loss = criterion(xhat, x)
         loss.backward()
         state.optim.step()
         state.iteration += 1
+        train_loss += loss.item()
+
+    train_loss /= len(data_train)
+
+    # Evaluation
+    state.model.eval()
+    eval_loss = 0.0
+    with torch.no_grad():
+        for x, _ in data_test:  # Assuming data_test is defined
+            xhat = state.model(x)
+            loss = criterion(xhat, x)
+            eval_loss += loss.item()
+
+    eval_loss /= len(data_test)
+    print(f"Epoch {epoch + 1}/{ITERATIONS}, Train Loss: {train_loss:.4f}, Eval Loss: {eval_loss:.4f}")
+
+    # Save the state at the end of each epoch
+    with savepath.open("wb") as fp:
+        state.epoch = epoch + 1
+        torch.save({
+            'epoch': state.epoch,
+            'iteration': state.iteration,
+            'model_state_dict': state.model.state_dict(),
+            'optimizer_state_dict': state.optim.state_dict()
+        }, fp)
+
+
+# ### EMBEDDINGS 
+# # Define savepath, model, device, etc.
+# # savepath = Path("AMAL/TME/TME3/model.pch")
+# # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# # model = Autoencodeur(input_size)  # Ensure input_size is defined
+# # model.to(device)
+
+# # # Load saved model state
+# # checkpoint = torch.load(savepath, map_location=device)
+# # model.load_state_dict(checkpoint['model_state_dict'])
+
+# # Process 3 batches and get embeddings
+# embeddings, labels = [], []
+# model.eval()
+# with torch.no_grad():
+#     for i, (images, label) in enumerate(data_train):
+#         if i == 3: break
+#         images = images.view(images.size(0), -1).to(device)
+#         encoded_images = model.encoder(images)
+#         embeddings.append(encoded_images.cpu().numpy())
+#         labels.append(label.numpy())
+
+# # Calculate mean embeddings per label
+# embeddings, labels = np.concatenate(embeddings), np.concatenate(labels)
+# mean_embeddings = {label: embeddings[labels == label].mean(axis=0) for label in np.unique(labels)}
+
+# # TensorBoard Visualization
+# writer = SummaryWriter('runs/embeddings_visualization')
+# features = torch.tensor(np.array(list(mean_embeddings.values())))
+# class_labels = torch.tensor(list(mean_embeddings.keys()))
+
+# writer.add_embedding(features, metadata=class_labels)
+# writer.close()
+
+
+
+
+# # Assumons que data_train est un DataLoader ou un itérable similaire
+# x1, label_x1 = None, None
+# x2, label_x2 = None, None
+
+# for images, labels in data_train:
+#     for i, label in enumerate(labels):
+#         if x1 is None:
+#             x1, label_x1 = images[i], label
+#         elif label != label_x1:
+#             x2, label_x2 = images[i], label
+#             break
+#     if x1 is not None and x2 is not None:
+#         break
+
+# # Vérification pour s'assurer que les deux images sont trouvées
+# if x1 is None or x2 is None:
+#     raise ValueError("Deux images de classes différentes n'ont pas pu être trouvées.")
+
+# # Prétraitement des images si nécessaire (redimensionnement, normalisation, etc.)
+# x1 = x1.unsqueeze(0).to(device)  # Ajout d'une dimension batch si nécessaire
+# x2 = x2.unsqueeze(0).to(device)
+
+
+# # Calcul des représentations latentes
+# z1, z2 = model.encoder(x1), model.encoder(x2)
+
+# # Interpolation entre z1 et z2
+# lambdas = np.linspace(0, 1, num=10)  # 10 valeurs de λ entre 0 et 1
+# interpolated_images = []
+
+# for lam in lambdas:
+#     z = lam * z1 + (1 - lam) * z2
+#     interpolated_img = model.decoder(z).detach()
+#     interpolated_images.append(interpolated_img)
+
+# # Utilisation de TensorBoard pour afficher les images
+# writer = SummaryWriter('runs/latent_space_interpolation')
+
+# for i, img in enumerate(interpolated_images):
+#     # img doit être au format (C, H, W) où C est le nombre de canaux (e.g., 3 pour RGB)
+#     img = img.view(1,28,28)
+#     writer.add_image(f'Interpolation_{i}', img, global_step=i)
+
+# writer.close()
+
+
+######## QUESTION 4
+# Initialisation du modèle
+num_layers = 3
+model = HighwayNetwork(input_size, num_layers)
+
+# Définir le critère de perte et l'optimiseur
+criterion = nn.CrossEntropyLoss()  # Pour la classification
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+
+savepath = Path("AMAL/TME/TME3/HIGHWAY.pch")
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# Create the state instance
+
+state = State(model, optimizer, device, savepath)
+
+# Boucle d'entraînement
+num_epochs = 5  # Nombre d'époques
+for epoch in range(num_epochs):
+    total_loss = 0
+    total_loss_test = 0
+    state.model.train()
+    for images, labels in data_train:
+        optimizer.zero_grad()
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+    print(f"Époque [{epoch+1}/{num_epochs}], Perte_train: {total_loss/len(data_train)}")
     
     # Save the state at the end of each epoch
     with savepath.open("wb") as fp:
@@ -167,3 +308,36 @@ for epoch in range(state.epoch, ITERATIONS):
             'model_state_dict': state.model.state_dict(),
             'optimizer_state_dict': state.optim.state_dict()
         }, fp)
+
+    state.model.eval()
+    for images, labels in data_test:
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+        total_loss_test += loss.item()
+    print(f"Époque [{epoch+1}/{num_epochs}], Perte_test: {total_loss_test/len(data_test)}")
+    
+
+
+import matplotlib.pyplot as plt
+# Assuming state.model is your model and first_batch contains your data
+first_batch, _ = next(iter(data_train))
+state.model.eval()
+
+# Move the batch to the same device as the model
+device = next(state.model.parameters()).device
+first_batch = first_batch.to(device)
+
+with torch.no_grad():
+    outputs = state.model(first_batch)
+    # Assuming a classification task, get the predicted labels
+    _, predicted = torch.max(outputs.data, 1)
+
+
+# Display some images along with predicted labels
+plt.figure(figsize=(10, 10))
+for i in range(min(len(first_batch), 9)):  # Display first 9 images
+    plt.subplot(3, 3, i + 1)
+    plt.imshow(first_batch[i].reshape(28, 28), cmap='gray')  # Adjust shape for your data
+    plt.title(f'Predicted: {predicted[i].item()}')
+    plt.axis('off')
+plt.show()
