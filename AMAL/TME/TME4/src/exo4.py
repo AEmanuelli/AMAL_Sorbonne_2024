@@ -1,3 +1,4 @@
+from pathlib import Path
 import string
 import unicodedata
 import torch
@@ -7,7 +8,7 @@ from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import Dataset,DataLoader
 
-from utils import RNN, device
+from utils import *
 
 ## Liste des symboles autorisés
 LETTRES = string.ascii_letters + string.punctuation+string.digits+' '
@@ -86,10 +87,10 @@ optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 #     print(f"Epoch {epoch+1}/{total_epoch}, Loss: {epoch_loss / len(data_trump)}")
 
 #################@Training loop with checkpointing
-savepath = PATH +"/modeltrump.pch"
+savepath = Path("AMAL/TME/TME4/src/trump.pch")
 state = State(model, optimizer, device, savepath)
 # Training Loop
-for epoch in tqdm(range(state.epoch, num_epochs)):
+for epoch in tqdm(range(state.epoch, total_epoch)):
     epoch_loss = 0
     state.model.train()
     for x, y in tqdm(data_trump):

@@ -85,3 +85,22 @@ class ForecastMetroDataset(Dataset):
         day = i % self.nb_days
         return self.data[day,timeslot:(timeslot+self.length-1)],self.data[day,(timeslot+1):(timeslot+self.length)]
 
+class State:
+    def __init__(self, model, optim, device, savepath = ""):
+        self.model = model
+        self.optim = optim
+        self.epoch, self.iteration = 0, 0
+        self.savepath = savepath
+        self.device = device
+        # Check if we have a saved state and load it
+        if savepath.is_file():
+            with savepath.open("rb") as fp:
+                state = torch.load(fp)  # Restart from saved model
+                self.model.load_state_dict(state['model_state_dict'])
+                self.optim.load_state_dict(state['optimizer_state_dict'])
+                self.epoch = state['epoch']
+                self.iteration = state['iteration']
+        else:
+            # Initialize model and optimizer here
+            self.model = model.to(device)
+            self.optim = optim
