@@ -40,7 +40,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
 model = RNN(input_dim=DIM_INPUT, latent_dim=HIDDEN_SIZE, output_dim=CLASSES).to(device)
 criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=2e-3)
+optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 epochs = 25
 loss_train_per_epoch = []
 loss_test_per_epoch = []
