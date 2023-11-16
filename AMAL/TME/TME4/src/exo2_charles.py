@@ -11,22 +11,23 @@ from torch.utils.data import DataLoader
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"running on {device}")
 # Nombre de stations utilisé
-CLASSES = 2
+CLASSES = 8
 # Longueur des séquences
-LENGTH = 20
+LENGTH = 40
 # Dimension de l'entrée (1 (in) ou 2 (in/out))
 DIM_INPUT = 2
 # Taille du batch
-BATCH_SIZE = 32
-HIDDEN_SIZE = 20
+BATCH_SIZE = 64
+HIDDEN_SIZE = 256
 PATH = "AMAL/TME/TME4/data/"
+LENGTH_TEST = 10
 
 
 matrix_train, matrix_test = torch.load(open(PATH + "hzdataset.pch", "rb"))
 ds_train = SampleMetroDataset(matrix_train[:, :, :CLASSES, :DIM_INPUT], length=LENGTH)
 ds_test = SampleMetroDataset(
     matrix_test[:, :, :CLASSES, :DIM_INPUT],
-    length=LENGTH,
+    length=LENGTH_TEST,
     stations_max=ds_train.stations_max,
 )
 

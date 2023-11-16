@@ -31,7 +31,7 @@ class RNN(nn.Module):
         return h_seq
 
     def decode(self, h_seq):
-        return torch.softmax(self.decoder(h_seq))
+        return torch.softmax(self.decoder(h_seq), dim = -1)
 
 class SampleMetroDataset(Dataset):
     def __init__(self, data,length=20,stations_max=None):

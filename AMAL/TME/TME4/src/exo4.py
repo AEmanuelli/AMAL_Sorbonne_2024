@@ -59,14 +59,13 @@ class TrumpDataset(Dataset):
 
 #  TODO: 
 PATH = "AMAL/TME/TME4/data/"
-batch_size = 30
 DIM_INPUT = len(id2lettre)
 DIM_OUTPUT = len(id2lettre)
 BATCH_SIZE = 64
-HIDDEN_SIZE = 256
+HIDDEN_SIZE = 10
 lr = 0.001
-total_epoch = 33
-data_trump = DataLoader(TrumpDataset(open(PATH+"trump_full_speech.txt","rb").read().decode(),maxlen=1000), batch_size= batch_size, shuffle=True)
+total_epoch = 3
+data_trump = DataLoader(TrumpDataset(open(PATH+"trump_full_speech.txt","rb").read().decode(),maxlen=800), batch_size= BATCH_SIZE, shuffle=True)
 
 model = RNN(DIM_INPUT, HIDDEN_SIZE, DIM_OUTPUT).to(device)
 criterion = nn.CrossEntropyLoss()
@@ -87,7 +86,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 #     print(f"Epoch {epoch+1}/{total_epoch}, Loss: {epoch_loss / len(data_trump)}")
 
 #################@Training loop with checkpointing
-savepath = Path("AMAL/TME/TME4/src/trump.pch")
+savepath = Path("AMAL/TME/TME4/src/trump_3.pch")
 state = State(model, optimizer, device, savepath)
 # Training Loop
 for epoch in tqdm(range(state.epoch, total_epoch)):
@@ -114,7 +113,6 @@ for epoch in tqdm(range(state.epoch, total_epoch)):
             'optimizer_state_dict': state.optim.state_dict()
         }, fp)
 
-# Text Generation Function
 def generate_text(seed, length=100):
     model.eval()
     generated = seed
@@ -122,16 +120,25 @@ def generate_text(seed, length=100):
     input_seq = nn.functional.one_hot(input_seq, num_classes=DIM_INPUT).to(device).float()
 
     with torch.no_grad():
-        for _ in range(length):
+        for i in range(length):  # Use 'i' for iteration count
             output = model(input_seq)
-            next_char_idx = output[0, -1].argmax()
-            next_char = id2lettre[next_char_idx.item()]
+            output = output[0, -1] / 1  # Apply temperature
+            probabilities = torch.nn.functional.softmax(output, dim=0)
+            next_char_idx = torch.multinomial(probabilities, 1).item()
+            next_char_idx = max(0, min(next_char_idx, DIM_INPUT - 1))
+            next_char = id2lettre.get(next_char_idx, '')  # Safe retrieval from dictionary
+            # Debugging print statements
+            print(f"Iteration {i}:")
+            print(f"  Next character index: {next_char_idx}")
+            print(f"  Next character: '{next_char}'")
+            print(f"  Generated so far: '{generated}'\n")
+
+
             generated += next_char
             next_input = torch.tensor([[next_char_idx]], device=device)
             next_input = nn.functional.one_hot(next_input, num_classes=DIM_INPUT).float()
             input_seq = torch.cat([input_seq, next_input], dim=1)
 
     return generated
-
 # Generate some text
 print(generate_text("America ", 200))
