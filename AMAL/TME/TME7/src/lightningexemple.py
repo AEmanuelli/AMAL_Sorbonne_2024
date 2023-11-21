@@ -17,7 +17,7 @@ LOG_PATH = "/tmp/runs/lightning_logs"
 class Lit2Layer(pl.LightningModule):
     def __init__(self,dim_in,l,dim_out,learning_rate=1e-3):
         super().__init__()
-        self.model = nn.Sequential(nn.Linear(dim_in,l),nn.ReLU(),nn.Linear(l,dim_out))
+        self.model = nn.Sequential(nn.Linear(dim_in,l),nn.ReLU(),nn.Linear(l,l),nn.ReLU(), nn.Linear(l,dim_out))
         self.learning_rate = learning_rate
         self.loss = nn.CrossEntropyLoss()
         self.name = "exemple-lightning"
@@ -104,8 +104,9 @@ class LitMnistData(pl.LightningDataModule):
         self.train_ratio = train_ratio
 
     def prepare_data(self):
-        ### Do not use "self" here.
-        prepare_dataset("com.lecun.mnist")
+        ds = prepare_dataset("com.lecun.mnist")
+        # train_images, train_labels = ds.train.images.data(), ds.train.labels.data()
+        # test_images, test_labels = ds.test.images.data(), ds.test.labels.data()
 
     def setup(self,stage=None):
         ds = prepare_dataset("com.lecun.mnist")
