@@ -8,6 +8,10 @@ from datamaestro import prepare_dataset
 import time
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger
+from torchvision import datasets, transforms
+
+
+
 
 BATCH_SIZE = 311
 TRAIN_RATIO = 0.8
@@ -23,7 +27,7 @@ class Lit2Layer(pl.LightningModule):
         self.name = "exemple-lightning"
         self.valid_outputs = []
         self.training_outputs = []
-
+        self.epoch_losses = []  # To store losses for each epoch
     def forward(self,x):
         """ Définit le comportement forward du module"""
         x = self.model(x)
@@ -80,6 +84,19 @@ class Lit2Layer(pl.LightningModule):
     def on_training_epoch_end(self):
         """ hook optionel, si on a besoin de faire quelque chose apres une époque d'apprentissage.
         Par exemple ici calculer des valeurs à logger"""
+
+        # Store the average loss for the current epoch
+        current_epoch_loss = sum([o['loss'].item() for o in self.training_outputs]) / len(self.training_outputs)
+        self.epoch_losses.append(current_epoch_loss)
+
+        # Log the losses every 5 epochs
+        if (self.current_epoch + 1) % 5 == 0:
+            for epoch, loss in enumerate(self.epoch_losses, 1):
+                self.logger.experiment.add_scalar("epoch_loss", loss, epoch)
+            
+            # Optionally, you can clear the stored losses after logging
+            # self.epoch_losses.clear()
+
         self.log_x_end(self.training_outputs,'train')
         self.training_outputs.clear()
         # Le logger de tensorboard est accessible directement avec self.logger.experiment.add_XXX
@@ -104,30 +121,34 @@ class LitMnistData(pl.LightningDataModule):
         self.train_ratio = train_ratio
 
     def prepare_data(self):
-        ds = prepare_dataset("com.lecun.mnist")
-        # train_images, train_labels = ds.train.images.data(), ds.train.labels.data()
-        # test_images, test_labels = ds.test.images.data(), ds.test.labels.data()
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
+            transforms.Lambda(lambda x: torch.flatten(x))
+        ])
+        # Téléchargement et stockage des ensembles de données
+        self.mnist_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+        self.mnist_test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
 
-    def setup(self,stage=None):
-        ds = prepare_dataset("com.lecun.mnist")
-        if stage =="fit" or stage is None:
-            # Si on est en phase d'apprentissage
-            shape = ds.train.images.data().shape
-            self.dim_in = shape[1]*shape[2]
-            self.dim_out = len(set(ds.train.labels.data()))
-            ds_train = TensorDataset(torch.tensor(ds.train.images.data()).view(-1,self.dim_in).float()/255., torch.tensor(ds.train.labels.data()).long())
-            train_length = int(shape[0]*self.train_ratio)
-            self.mnist_train, self.mnist_val, = random_split(ds_train,[train_length,shape[0]-train_length])
+    def setup(self, stage=None):
+        if stage == "fit" or stage is None:
+            # Dimensions
+            self.dim_in = 28 * 28  # MNIST images are 28x28
+            self.dim_out = 10  # 10 classes
+            # Division en train et validation
+            train_length = int(len(self.mnist_train_dataset) * self.train_ratio)
+            self.mnist_train, self.mnist_val = random_split(self.mnist_train_dataset, [train_length, len(self.mnist_train_dataset) - train_length])
         if stage == "test" or stage is None:
-            # en phase de test
-            self.mnist_test= TensorDataset(torch.tensor(ds.test.images.data()).view(-1,self.dim_in).float()/255., torch.tensor(ds.test.labels.data()).long())
+            self.mnist_test = self.mnist_test_dataset
+
 
     def train_dataloader(self):
-        return DataLoader(self.mnist_train,batch_size=self.batch_size)
+        return DataLoader(self.mnist_train, batch_size=self.batch_size, num_workers=3)
     def val_dataloader(self):
-        return DataLoader(self.mnist_val,batch_size=self.batch_size)
+        return DataLoader(self.mnist_val, batch_size=self.batch_size, num_workers=3)
     def test_dataloader(self):
-        return DataLoader(self.mnist_test,batch_size=self.batch_size)
+        return DataLoader(self.mnist_test, batch_size=self.batch_size, num_workers=3)
+
 
 
 data = LitMnistData()
@@ -135,10 +156,10 @@ data = LitMnistData()
 data.prepare_data()
 data.setup(stage="fit")
 
-model = Lit2Layer(data.dim_in,10,data.dim_out,learning_rate=1e-3)
+model = Lit2Layer(data.dim_in,80,data.dim_out,learning_rate=1e-3)
 
 logger = TensorBoardLogger(save_dir=LOG_PATH,name=model.name,version=time.asctime(),default_hp_metric=False)
 
-trainer = pl.Trainer(default_root_dir=LOG_PATH,logger=logger,max_epochs=100)
+trainer = pl.Trainer(default_root_dir=LOG_PATH,logger=logger,max_epochs=500)
 trainer.fit(model,data)
 trainer.test(model,data)
