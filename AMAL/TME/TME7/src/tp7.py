@@ -73,4 +73,5 @@ def store_grad(var):
 
 # BATCHNORM == pas possible d'envoyer un batch de taille 1.
 # entrainement avce de la batchnorm différent du test. la taille du minibatch est un paramètre de régularisation
-# histoire de running average 
+# histoire de running average
+# la régularisation (L1 ?) permet de mettre des plus grands learnings rates 
