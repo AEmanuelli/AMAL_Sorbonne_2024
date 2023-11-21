@@ -9,6 +9,19 @@ import time
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger
 from torchvision import datasets, transforms
+from pytorch_lightning.callbacks import ModelCheckpoint  # Import ModelCheckpoint
+
+
+# # Paramètres pour le ModelCheckpoint
+# CHECKPOINT_PATH = "/runs/lightning_logs/checkpoints"  # Chemin où les checkpoints seront enregistrés
+# checkpoint_callback = ModelCheckpoint(
+#     dirpath=CHECKPOINT_PATH,
+#     filename='{epoch}-{val_loss:.2f}',
+#     save_top_k=3,  # Nombre maximal de checkpoints à garder
+#     verbose=True,
+#     monitor='val_loss',  # Métrique à surveiller pour l'enregistrement
+#     mode='min'  # 'min' pour sauvegarder lorsque la métrique surveillée a diminué
+# )
 
 
 
@@ -160,6 +173,8 @@ model = Lit2Layer(data.dim_in,80,data.dim_out,learning_rate=1e-3)
 
 logger = TensorBoardLogger(save_dir=LOG_PATH,name=model.name,version=time.asctime(),default_hp_metric=False)
 
-trainer = pl.Trainer(default_root_dir=LOG_PATH,logger=logger,max_epochs=500)
+trainer = pl.Trainer(default_root_dir=LOG_PATH,logger=logger,max_epochs=500)#, callbacks=[checkpoint_callback])
 trainer.fit(model,data)
 trainer.test(model,data)
+
+# !tensorboard --logdir=/tmp/runs/lightning_logs
