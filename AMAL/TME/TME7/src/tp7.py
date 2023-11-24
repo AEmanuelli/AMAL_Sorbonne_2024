@@ -12,20 +12,6 @@ from tqdm import tqdm
 import click
 
 from datamaestro import prepare_dataset
-from torchvision import datasets, transforms
-
-def prepare_data(self):
-    # Transformations à appliquer sur les images
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-    ])
-
-    # Téléchargement des ensembles de données
-    mnist_train = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-    mnist_test = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
-
-
 
 # Ratio du jeu de train à utiliser
 TRAIN_RATIO = 0.05

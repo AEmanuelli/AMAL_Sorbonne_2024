@@ -7,6 +7,8 @@ import torch.nn as nn
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import Dataset,DataLoader
+from torch.cuda.amp import GradScaler, autocast
+from pathlib import Path
 
 from utils import *
 
@@ -54,6 +56,18 @@ class TrumpDataset(Dataset):
         return t[:-1],t[1:]
 
 
+def save_checkpoint(state, filename="checkpoint.pth.tar"):
+    """Saves checkpoint to disk"""
+    torch.save(state, filename)
+
+def load_checkpoint(checkpoint_path, model, optimizer):
+    if Path(checkpoint_path).is_file():
+        print(f"Loading checkpoint '{checkpoint_path}'")
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint['state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        return checkpoint['epoch']
+    return 0
 
 
 
@@ -64,54 +78,74 @@ DIM_OUTPUT = len(id2lettre)
 BATCH_SIZE = 64
 HIDDEN_SIZE = 10
 lr = 0.001
-total_epoch = 3
+total_epoch = 100
 data_trump = DataLoader(TrumpDataset(open(PATH+"trump_full_speech.txt","rb").read().decode(),maxlen=800), batch_size= BATCH_SIZE, shuffle=True)
 
 model = RNN(DIM_INPUT, HIDDEN_SIZE, DIM_OUTPUT).to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
+
+scaler = GradScaler()
+
+def train(model_name, total_epoch=100, save_every_n_epochs=5):
+    checkpoint_path = PATH + f"{model_name}.pth.tar"
+    start_epoch = load_checkpoint(checkpoint_path, model, optimizer)
+
+    for epoch in tqdm(range(start_epoch, total_epoch)):
+        epoch_loss = 0
+        for x, y in tqdm(data_trump):
+            x, y = nn.functional.one_hot(x, num_classes=DIM_OUTPUT).to(device).float(), y.to(device).float()
+            optimizer.zero_grad()
+            with autocast():
+                x = x.float() if x.dtype != torch.float16 else x
+                output = model(x).float()
+                loss = criterion(output.transpose(1, 2), y)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            epoch_loss += loss.item()
+
+        if epoch % save_every_n_epochs == 0 or epoch == total_epoch - 1:
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'state_dict': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'loss': epoch_loss,
+            }, filename=checkpoint_path)
+        print(f"Epoch {epoch+1}/{total_epoch}, Loss: {epoch_loss / len(data_trump)}")
+
+
+
+
+
+#################@Training loop with checkpointing
+# savepath = Path("AMAL/TME/TME4/src/trump_3.pch")
+# state = State(model, optimizer, device, savepath)
 # # Training Loop
-# for epoch in tqdm(range(total_epoch)):
+# for epoch in tqdm(range(state.epoch, total_epoch)):
 #     epoch_loss = 0
+#     state.model.train()
 #     for x, y in tqdm(data_trump):
 #         x = nn.functional.one_hot(x, num_classes=DIM_INPUT).to(device).float()
 #         y = y.to(device)
-#         optimizer.zero_grad()
+#         state.optim.zero_grad()
 #         output = model(x)
 #         loss = criterion(output.transpose(1, 2), y)
 #         loss.backward()
-#         optimizer.step()
+#         state.optim.step()
 #         epoch_loss += loss.item()
+#         state.iteration += 1
 #     print(f"Epoch {epoch+1}/{total_epoch}, Loss: {epoch_loss / len(data_trump)}")
-
-#################@Training loop with checkpointing
-savepath = Path("AMAL/TME/TME4/src/trump_3.pch")
-state = State(model, optimizer, device, savepath)
-# Training Loop
-for epoch in tqdm(range(state.epoch, total_epoch)):
-    epoch_loss = 0
-    state.model.train()
-    for x, y in tqdm(data_trump):
-        x = nn.functional.one_hot(x, num_classes=DIM_INPUT).to(device).float()
-        y = y.to(device)
-        state.optim.zero_grad()
-        output = model(x)
-        loss = criterion(output.transpose(1, 2), y)
-        loss.backward()
-        state.optim.step()
-        epoch_loss += loss.item()
-        state.iteration += 1
-    print(f"Epoch {epoch+1}/{total_epoch}, Loss: {epoch_loss / len(data_trump)}")
-    # Save the state at the end of each epoch
-    with savepath.open("wb") as fp:
-        state.epoch = epoch + 1
-        torch.save({
-            'epoch': state.epoch,
-            'iteration': state.iteration,
-            'model_state_dict': state.model.state_dict(),
-            'optimizer_state_dict': state.optim.state_dict()
-        }, fp)
+#     # Save the state at the end of each epoch
+#     with savepath.open("wb") as fp:
+#         state.epoch = epoch + 1
+#         torch.save({
+#             'epoch': state.epoch,
+#             'iteration': state.iteration,
+#             'model_state_dict': state.model.state_dict(),
+#             'optimizer_state_dict': state.optim.state_dict()
+#         }, fp)
 
 def generate_text(seed, length=100):
     model.eval()
@@ -126,13 +160,7 @@ def generate_text(seed, length=100):
             probabilities = torch.nn.functional.softmax(output, dim=0)
             next_char_idx = torch.multinomial(probabilities, 1).item()
             next_char_idx = max(0, min(next_char_idx, DIM_INPUT - 1))
-            next_char = id2lettre.get(next_char_idx, '')  # Safe retrieval from dictionary
-            # Debugging print statements
-            print(f"Iteration {i}:")
-            print(f"  Next character index: {next_char_idx}")
-            print(f"  Next character: '{next_char}'")
-            print(f"  Generated so far: '{generated}'\n")
-
+            next_char = id2lettre.get(next_char_idx, '')  # Safe retrieval from dictionar
 
             generated += next_char
             next_input = torch.tensor([[next_char_idx]], device=device)
@@ -140,5 +168,9 @@ def generate_text(seed, length=100):
             input_seq = torch.cat([input_seq, next_input], dim=1)
 
     return generated
-# Generate some text
+
+
+# Train and generate text
+model_name = "final"
+train(model_name)
 print(generate_text("America ", 200))
