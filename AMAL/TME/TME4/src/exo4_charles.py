@@ -211,7 +211,7 @@ def generate(model_name, lenght=45, prompt='Trump:'):
     print(code2string(output))
     """
     
-model_name = "model_oh"
+model_name = "model_oh_2"
 torch.save(model.state_dict(), PATH+f"{model_name}.pt")
 train(model_name)
 generate(model_name)

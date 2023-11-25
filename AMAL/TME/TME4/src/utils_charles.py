@@ -22,33 +22,33 @@ class RNN(nn.Module):
         self.output_size = output_size
         self.batch_first = batch_first
         
+        # Couches linéaires
         self.f_x = nn.Linear(input_size, hidden_size, bias=False)
         self.f_h = nn.Linear(hidden_size, hidden_size)
         self.f_d = nn.Linear(hidden_size, output_size)
 
+        # Fonction d'activation
         if nonlinearity == "tanh":
             self.nonlinearity = nn.Tanh()
         elif nonlinearity == "relu":
             self.nonlinearity = nn.ReLU()
 
+        # Initialisation des poids
+        self.init_weights()
+
+    def init_weights(self):
+        # Initialisation de Xavier pour les couches linéaires
+        nn.init.xavier_uniform_(self.f_x.weight)
+        nn.init.xavier_uniform_(self.f_h.weight)
+        nn.init.xavier_uniform_(self.f_d.weight)
+        nn.init.zeros_(self.f_h.bias)
+        nn.init.zeros_(self.f_d.bias)
+
     def forward(self, x, h):
-        """_summary_
-
-        Parameters
-        ----------
-        x : (length, batch, input_size)
-        h : (batch, hidden_size)
-
-        Returns
-        -------
-        h_final : (length, batch, hidden_size)
-        """
         h_final = torch.zeros((h.size(0), x.size(1), h.size(1)), device=device)
-        # ic(h_final.size())
         if self.batch_first:
             for i in range(x.size(1)):
                 h = self.one_step(x[:, i, :], h)
-                # ic(h.size())
                 h_final[:, i, :] = h
         else:
             for i in range(x.size(0)):
@@ -57,27 +57,12 @@ class RNN(nn.Module):
         return h_final
 
     def one_step(self, x, h):
-        """
-
-        Parameters
-        ----------
-        x :
-            (batch,input_size)
-        h :
-            (batch,hidden_size)
-
-        Returns
-        -------
-        h_t+1 : (batch,hidden_size)
-        """
-        # ic(x.size())
-        # ic(h.size())
-        # ic(self.f_x(x).size())
-        # ic(self.f_h(h).size())
         return self.nonlinearity(self.f_x(x) + self.f_h(h))
 
     def decode(self, h):
-        return self.nonlinearity(self.f_d(h))
+        # Retrait de la non-linéarité pour produire directement des logits
+        return self.f_d(h)
+
 
 
 class SampleMetroDataset(Dataset):
