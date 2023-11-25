@@ -14,7 +14,7 @@ def generate(rnn, emb, decoder, eos, start="", maxlen=200):
     * start : début de la phrase
     * maxlen : longueur maximale
     """
-"""    for i in range(maxlen):
+    """for i in range(maxlen):
         generated = [torch.tensor(torch.randint(len(lettre2id), (1,))).to(device)]
         for i in range(maxlen):
             embdeded = emb(nn.Embeddings())
@@ -22,7 +22,8 @@ def generate(rnn, emb, decoder, eos, start="", maxlen=200):
             decoded = decoder(encoded)
             generated.append(model.decode(h))
         generated = torch.stack(generated[1:])
-        print("".join([id2lettre[int(i)] for i in generated.squeeze()]))"""
+        print("".join([id2lettre[int(i)] for i in generated.squeeze()]))
+        """
     l = 0
 	res = start
 	output = start
