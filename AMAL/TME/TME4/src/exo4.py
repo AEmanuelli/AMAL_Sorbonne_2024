@@ -10,7 +10,7 @@ from torch.utils.data import Dataset,DataLoader
 from torch.cuda.amp import GradScaler, autocast
 from pathlib import Path
 
-from utils_charles import *
+from utils import *
 
 ## Liste des symboles autorisés
 LETTRES = string.ascii_letters + string.punctuation+string.digits+' '
@@ -67,7 +67,7 @@ total_epoch = 500
 max_len = 50
 data_trump = DataLoader(TrumpDataset(open(PATH+"trump_full_speech.txt","rb").read().decode(),maxlen=max_len), batch_size= BATCH_SIZE, shuffle=True)
 
-model = RNN(DIM_INPUT, hidden_size, DIM_OUTPUT, batch_first=True
+model = RNN(DIM_INPUT, hidden_size, DIM_OUTPUT
 ).to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -124,7 +124,7 @@ def temperature_sampling(logits, temperature=1.0):
     next_char_idx = torch.multinomial(probs, num_samples=1)
     return next_char_idx
 
-def generate_text(model, start_string="Trump", generation_length=100, temperature=1.0):
+def generate_text(model, start_string="Trump", generation_length=100, temperature=0.5):
     input_eval = string2code(start_string)  # Convert starting string to tensor
     input_eval = input_eval.unsqueeze(0)  # Add batch dimension
 
@@ -133,7 +133,7 @@ def generate_text(model, start_string="Trump", generation_length=100, temperatur
     model.eval()  # Evaluation mode
 
     with torch.no_grad():
-        h = torch.zeros([1, model.hidden_size], device=input_eval.device)  # Initialize hidden state
+        h = torch.zeros([1, model.latent_dim], device=input_eval.device)  # Initialize hidden state
 
         for i in range(generation_length):
             # Update hidden state
@@ -255,5 +255,5 @@ def train(model, data_loader, criterion, optimizer):
 
 
 # Train and generate text
-model_name = "cbonjebadde"
+model_name = "final_"
 train(model, data_trump, criterion, optimizer)

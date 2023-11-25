@@ -1,40 +1,50 @@
 from textloader import string2code, id2lettre
 import math
 import torch
+from tp5 import *
 
 #  TODO:  Ce fichier contient les différentes fonction de génération
 
 
 def generate(rnn, emb, decoder, eos, start="", maxlen=200):
-    """Fonction de génération (l'embedding et le decodeur être des fonctions du rnn). Initialise le réseau avec start (ou à 0 si start est vide) et génère une séquence de longueur maximale 200 ou qui s'arrête quand eos est généré.
-    * rnn : le réseau
-    * emb : la couche d'embedding
-    * decoder : le décodeur
-    * eos : ID du token end of sequence
-    * start : début de la phrase
-    * maxlen : longueur maximale
     """
-    """    for i in range(maxlen):
-        generated = [torch.tensor(torch.randint(len(lettre2id), (1,))).to(device)]
-        for i in range(maxlen):
-            embdeded = emb(nn.Embeddings())
-            encoded = rnn(embdeded)
-            decoded = decoder(encoded)
-            generated.append(model.decode(h))
-        generated = torch.stack(generated[1:])
-        print("".join([id2lettre[int(i)] for i in generated.squeeze()]))"""
-    l = 0
-	res = start
-	output = start
-	while l < maxlen:
-		output = decoder(rnn(emb(output)).argmax(axis=1))
-		if output == eos:
-			break
-		res += output
-		l+=1
-	return start
-    #  TODO:  Implémentez la génération à partir du RNN, et d'une fonction decoder qui renvoie les logits (logarithme de probabilité à une constante près, i.e. ce qui vient avant le softmax) des différentes sorties possibles
+    Generates a sequence using an RNN. The sequence starts with 'start' (or empty if start is not provided) and continues until the 'eos' token is generated or maxlen is reached.
+    
+    Args:
+    * rnn (nn.Module): The RNN model.
+    * emb (function): Embedding layer function.
+    * decoder (function): Decoder function that returns the logits of possible outputs.
+    * eos (int): ID of the end-of-sequence token.
+    * start (str): Starting string for the sequence.
+    * maxlen (int): Maximum length of the generated sequence.
 
+    Returns:
+    * str: The generated sequence.
+    """
+    sequence = start
+    hidden = None
+    str = start
+
+    for _ in range(maxlen):
+        input_tensor = torch.tensor([string2code(sequence[-1])]) if sequence else torch.tensor([0])
+        embedded = emb(input_tensor)
+        output, hidden = rnn(embedded, hidden) if hidden is not None else rnn(embedded)
+        logits = decoder(output)
+        next_char_idx = temperature_sampling(logits, temperature)
+        next_char_idx = next_char_idx.squeeze().tolist()  # Convert to list
+
+        # Check if it's a single integer, convert to list if so
+        if isinstance(next_char_idx, int):
+            next_char_idx = [next_char_idx]
+
+        next_char = id2lettre(next_char_idx)
+
+        str += next_char
+
+        if next_char_idx == eos:
+            break
+
+    return str
 
 def generate_beam(rnn, emb, decoder, eos, k, start="", maxlen=200):
     """
@@ -47,24 +57,45 @@ def generate_beam(rnn, emb, decoder, eos, k, start="", maxlen=200):
     * start : début de la phrase
     * maxlen : longueur maximale
     """
-    #  TODO:  Implémentez le beam Search
+    # Initial setup
+    beams = [(start, 0)]  # Each beam is a tuple of (sequence, log_probability)
+    for _ in range(maxlen):
+        candidates = []
+        for seq, score in beams:
+            input_tensor = torch.tensor([string2code(seq[-1])]) if seq else torch.tensor([0])
+            embedded = emb(input_tensor)
+            output, hidden = rnn(embedded)
+            logits = decoder(output)
+            log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
 
+            # Consider the top k candidates for each beam
+            topk_probs, topk_indices = torch.topk(log_probs, k)
+            for i in range(k):
+                next_char = id2lettre(topk_indices[0][i].item())
+                new_seq = seq + next_char
+                new_score = score + topk_probs[0][i].item()
+                candidates.append((new_seq, new_score))
 
-# p_nucleus
-def p_nucleus(decoder, alpha: float):
-    """Renvoie une fonction qui calcule la distribution de probabilité sur les sorties
+        # Select the top k beams
+        beams = sorted(candidates, key=lambda x: x[1], reverse=True)[:k]
+        if all(seq[-1] == eos for seq, _ in beams):
+            break
 
-    Args:
-        * decoder: renvoie les logits étant donné l'état du RNN
-        * alpha (float): masse de probabilité à couvrir
+    return max(beams, key=lambda x: x[1])[0]  # Return the sequence with the highest score
+
+# Implementing the p_nucleus function
+def p_nucleus(decoder, alpha):
     """
-
+    Creates a function for nucleus sampling.
+    """
     def compute(h):
-        """Calcule la distribution de probabilité sur les sorties
-
-        Args:
-           * h (torch.Tensor): L'état à décoder
-        """
-        #  TODO:  Implémentez le Nucleus sampling ici (pour un état s)
-
+        logits = decoder(h)
+        sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+        cumulative_probs = torch.cumsum(torch.nn.functional.softmax(sorted_logits, dim=-1), dim=-1)
+        idx = (cumulative_probs > alpha).nonzero()[0]
+        effective_logits = sorted_logits[:, :idx+1]
+        probabilities = torch.nn.functional.softmax(effective_logits, dim=-1)
+        next_char_idx = torch.multinomial(probabilities, 1)
+        return sorted_indices[:, :idx+1][0, next_char_idx]
+    
     return compute

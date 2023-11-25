@@ -7,19 +7,29 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class RNN(nn.Module):
     #  TODO:  Implémenter comme décrit dans la question 1
-    def __init__(self, input_dim, latent_dim, output_dim):
-        super(RNN, self).__init__()
+    def __init__(self, input_dim, latent_dim, output_dim, batch_first = None):
+        super().__init__()
         self.input_dim = input_dim
         self.latent_dim = latent_dim
         self.output_dim = output_dim
         self.f_x = nn.Linear(input_dim, latent_dim)
         self.f_h = nn.Linear(latent_dim, latent_dim)
         self.decoder = nn.Linear(latent_dim, output_dim)
+        # Initialisation des poids
+        self.init_weights()
+
+    def init_weights(self):
+        # Initialisation de Xavier pour les couches linéaires
+        nn.init.xavier_uniform_(self.f_x.weight)
+        nn.init.xavier_uniform_(self.f_h.weight)
+        nn.init.xavier_uniform_(self.decoder.weight)
+        nn.init.zeros_(self.f_h.bias)
+        nn.init.zeros_(self.decoder.bias)
 
     def one_step(self, x, h):
         return torch.tanh(self.f_x(x) + self.f_h(h))
 
-    def forward(self, x):
+    def forward(self, x, h = 0):
         h = torch.zeros(x.size(0), self.latent_dim).to(x.device)
         h_seq = []
 
@@ -31,7 +41,7 @@ class RNN(nn.Module):
         return h_seq
 
     def decode(self, h_seq):
-        return torch.softmax(self.decoder(h_seq), dim = -1)
+        return self.decoder(h_seq)
 
 class SampleMetroDataset(Dataset):
     def __init__(self, data,length=20,stations_max=None):

@@ -33,7 +33,7 @@ accuracy_test = torchmetrics.classification.Accuracy(
 )
 # Create datasets and dataloaders
 ds_train = SampleMetroDataset(matrix_train[:, :, :CLASSES, :DIM_INPUT], length=LENGTH)
-ds_test = SampleMetroDataset(matrix_test[:, :, :CLASSES, :DIM_INPUT], length=LENGTH_TEST_2, stations_max=ds_train.stations_max)
+ds_test = SampleMetroDataset(matrix_test[:, :, :CLASSES, :DIM_INPUT], length=LENGTH, stations_max=ds_train.stations_max)
 data_train = DataLoader(ds_train, batch_size=BATCH_SIZE, shuffle=True)
 data_test = DataLoader(ds_test, batch_size=BATCH_SIZE, shuffle=False)
 
@@ -47,7 +47,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 # Model evaluation and predictions would follow after this, using the data_test DataLoader
 # and the trained model.
 
-savepath = Path("AMAL/TME/TME4/src/hzdataset_model_1.pch")
+savepath = Path("AMAL/TME/TME4/src/hzdataset_model_12.pch")
 state = State(model, optimizer, device, savepath)
 
 loss_train_per_epoch = []
