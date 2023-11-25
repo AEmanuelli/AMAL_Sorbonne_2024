@@ -124,8 +124,9 @@ def temperature_sampling(logits, temperature=1.0):
     next_char_idx = torch.multinomial(probs, num_samples=1)
     return next_char_idx
 
-def generate_text(model, start_string="Trump", generation_length=100, temperature=0.5):
-    input_eval = string2code(start_string)  # Convert starting string to tensor
+
+def generate_text(model, embedding, start_string="Trump", generation_length=100, temperature=0.5):
+    input_eval = string2code(start_string).to(device)  # Convert starting string to tensor
     input_eval = input_eval.unsqueeze(0)  # Add batch dimension
 
     generated_text = start_string
@@ -137,7 +138,7 @@ def generate_text(model, start_string="Trump", generation_length=100, temperatur
 
         for i in range(generation_length):
             # Update hidden state
-            h = model.one_step(nn.functional.one_hot(input_eval[:, -1], num_classes=len(lettre2id)).float(), h)
+            h = model.one_step(embedding(input_eval[:, -1]).float(), h)
 
             # Get logits from the hidden state
             logits = model.decode(h)
@@ -161,22 +162,11 @@ def generate_text(model, start_string="Trump", generation_length=100, temperatur
     return generated_text
 
 
-
-
-
-def generate(model):
-    # model.load_state_dict(torch.load(PATH+f"{model_name}.pt"))
-    for _ in range(2):
-        h = torch.zeros(
-            (1, hidden_size), device=device
-        )
-        generated = [torch.tensor(torch.randint(len(lettre2id), (1,))).to(device)]
-        model.eval()
-        for i in range(max_len):
-            h = model.one_step(nn.functional.one_hot(generated[-1], num_classes=len(lettre2id)).float(), h)
-            generated.append(model.decode(h).argmax(1))
-        generated = torch.stack(generated[1:])
-        print("".join([id2lettre[int(i)] for i in generated.squeeze()]))
+EMBEDDING_DIM = 50
+embedding = nn.Embedding(num_embeddings=DIM_INPUT, embedding_dim=EMBEDDING_DIM).to(device)
+model = RNN(EMBEDDING_DIM, hidden_size, DIM_OUTPUT).to(device)
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(list(model.parameters()) + list(embedding.parameters()))
 
 def train(model, data_loader, criterion, optimizer):
     checkpoint_path = PATH + f"{model_name}.pth.tar"
@@ -184,31 +174,27 @@ def train(model, data_loader, criterion, optimizer):
     for epoch in tqdm(range(start_epoch, total_epoch)):
         model.train()
         total_loss = 0
-
         for x, y in tqdm((data_loader)):
             # Réinitialisation de l'état caché pour chaque batch
-            h = torch.zeros(x.size(0), hidden_size, device=device)
-
-            # Préparation des données
-            y = nn.functional.one_hot(y, num_classes=DIM_OUTPUT).to(device).float()
-            x = nn.functional.one_hot(x, num_classes=DIM_OUTPUT).to(device).float()
-
+            x = x.to(device)
+            x_embedded = embedding(x).to(device)
+            h = torch.zeros(x_embedded.size(0), hidden_size, device=device)
             # Forward pass
             optimizer.zero_grad()
-            h = model(x, h)
+            h = model(x_embedded, h)
             y_hat = model.decode(h)
 
             # Calcul de la perte
-            loss = criterion(y_hat, y)  # Ajustement pour CrossEntropyLoss
+            loss = criterion(y_hat.transpose(1, 2), y.to(device))
             total_loss += loss.item()
 
             # Backward pass et optimisation
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)  # Clipping des gradients
             optimizer.step()
-        print(code2string(y[0,:,:].argmax(1)))
+        print(code2string(y[0,:]))
         print(code2string(y_hat[0,:,:].argmax(1)))
-        print(generate_text(model))
+        print(generate_text(model, embedding=embedding))
         avg_loss = total_loss / len(data_loader)
         print(f'Epoch {epoch + 1}/{total_epoch}, Loss: {avg_loss:.4f}')
         if epoch % 5 == 0 or epoch == total_epoch - 1:
@@ -218,8 +204,6 @@ def train(model, data_loader, criterion, optimizer):
                 'optimizer': optimizer.state_dict(),
                 'loss': avg_loss,
             }, filename=PATH + f"{model_name}.pth.tar")
-
-
 
 
 
@@ -255,5 +239,5 @@ def train(model, data_loader, criterion, optimizer):
 
 
 # Train and generate text
-model_name = "final_"
+model_name = "rebirth"
 train(model, data_trump, criterion, optimizer)
