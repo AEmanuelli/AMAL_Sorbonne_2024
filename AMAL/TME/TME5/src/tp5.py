@@ -1,15 +1,37 @@
 from pathlib import Path
-import string
 import torch
-import sys
 import torch.nn as nn
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import Dataset,DataLoader
-from torch.cuda.amp import GradScaler, autocast
-import torch.nn.functional as F
 from utils import *
+from generate import *
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+def maskedCrossEntropy(output: torch.Tensor, target: torch.LongTensor, padcar = PAD_IX):
+    """
+    Calculate cross-entropy loss, ignoring the padding characters.
+    
+    :param output: Tensor of shape [length, batch, output_dim] (model output)
+    :param target: Tensor of shape [length, batch] (ground truth)
+    :param padcar: Integer representing the padding character
+    :return: Scalar tensor representing the mean loss
+    """
+    criterion = nn.CrossEntropyLoss(reduction='none')
+
+    # Reshape output to [batch_size * seq_len, output_dim] and target to [batch_size * seq_len]
+    batch_size, seq_len, output_dim = output.shape
+    loss = criterion(output, target)
+
+    # Create a mask for non-padding elements
+    mask = target != padcar
+    masked_loss = loss * mask.type_as(loss)
+
+    # Calculate mean loss only over non-padded elements
+    return masked_loss.sum() / mask.sum()
+
+
 
 #  TODO: 
 PATH = "AMAL/TME/TME4/data/"
@@ -17,15 +39,16 @@ DIM_INPUT = len(id2lettre)
 DIM_OUTPUT = len(id2lettre)
 EMBEDDING_DIM = 50
 BATCH_SIZE = 128
-hidden_size = 250
+hidden_size = 20
 lr = 5e-4
 total_epoch = 500
 max_len = 60
-data_trump = DataLoader(TrumpDataset(open(PATH+"trump_full_speech.txt","rb").read().decode(),maxlen=max_len), batch_size= BATCH_SIZE, shuffle=True)
-
+data_trump = DataLoader(TrumpDataset(open(PATH+"trump_full_speech.txt","rb").read().decode(), maxlen=max_len), 
+                        batch_size=BATCH_SIZE, 
+                        shuffle=True
+)
 embedding = nn.Embedding(num_embeddings=DIM_INPUT, embedding_dim=EMBEDDING_DIM)
 model = RNN(EMBEDDING_DIM, hidden_size, DIM_OUTPUT).to(device)
-criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(list(model.parameters()) + list(embedding.parameters()))
 
 def train(model, data_loader, criterion, optimizer):
@@ -36,8 +59,8 @@ def train(model, data_loader, criterion, optimizer):
         total_loss = 0
         for x, y in tqdm((data_loader)):
             # Réinitialisation de l'état caché pour chaque batch
-            x_embedded = embedding(x)
-            y_embedded = embedding(y)
+            x = x.to(device)
+            x_embedded = embedding(x).to(device)
             h = torch.zeros(x_embedded.size(0), hidden_size, device=device)
             # Forward pass
             optimizer.zero_grad()
@@ -45,16 +68,16 @@ def train(model, data_loader, criterion, optimizer):
             y_hat = model.decode(h)
 
             # Calcul de la perte
-            loss = criterion(y_hat.transpose(1, 2), y)
+            loss = criterion(y_hat.transpose(1, 2), y.to(device))
             total_loss += loss.item()
 
             # Backward pass et optimisation
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)  # Clipping des gradients
             optimizer.step()
-        print(code2string(y[0,:]))
+        print(code2string(y[1,:]))
         print(code2string(y_hat[0,:,:].argmax(1)))
-        print(generate_text(model, embedding=embedding))
+        print(generate(model, embedding=embedding))
         avg_loss = total_loss / len(data_loader)
         print(f'Epoch {epoch + 1}/{total_epoch}, Loss: {avg_loss:.4f}')
         if epoch % 5 == 0 or epoch == total_epoch - 1:
@@ -67,5 +90,5 @@ def train(model, data_loader, criterion, optimizer):
 
 
 # Train and generate text
-model_name = "tp5"
-train(model, data_trump, criterion, optimizer)
+model_name = "tp5_test_padpadpad_20"
+train(model, data_trump, maskedCrossEntropy, optimizer)

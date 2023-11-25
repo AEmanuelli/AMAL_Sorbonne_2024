@@ -18,6 +18,35 @@ id2lettre = dict(zip(range(1,len(LETTRES)+1),LETTRES))
 id2lettre[0]='' ##NULL CHARACTER
 ## Dictionnaire lettre -> index
 lettre2id = dict(zip(id2lettre.values(),id2lettre.keys()))
+
+## Token de padding (BLANK)
+PAD_IX = 0
+## Token de fin de séquence
+EOS_IX = 1
+
+LETTRES = string.ascii_letters + string.punctuation + string.digits + " "
+id2lettre = dict(zip(range(2, len(LETTRES) + 2), LETTRES))
+id2lettre[PAD_IX] = "<PAD>"  ##NULL CHARACTER
+id2lettre[EOS_IX] = "<EOS>"
+lettre2id = dict(zip(id2lettre.values(), id2lettre.keys()))
+
+
+def normalize(s):
+    """enlève les accents et les caractères spéciaux"""
+    return "".join(c for c in unicodedata.normalize("NFD", s) if c in LETTRES)
+
+
+def string2code(s):
+    """prend une séquence de lettres et renvoie la séquence d'entiers correspondantes"""
+    return torch.tensor([lettre2id[c] for c in normalize(s)])
+
+
+def code2string(t):
+    """prend une séquence d'entiers et renvoie la séquence de lettres correspondantes"""
+    if type(t) != list:
+        t = t.tolist()
+    return "".join(id2lettre[i] for i in t)
+
 class RNN(nn.Module):
     #  TODO:  Implémenter comme décrit dans la question 1
     def __init__(self, input_dim, latent_dim, output_dim, batch_first = None):
@@ -57,23 +86,6 @@ class RNN(nn.Module):
         return self.decoder(h_seq)
 
 
-
-
-
-def normalize(s):
-    """ Nettoyage d'une chaîne de caractères. """
-    return ''.join(c for c in unicodedata.normalize('NFD', s) if  c in LETTRES)
-
-def string2code(s):
-    """ Transformation d'une chaîne de caractère en tenseur d'indexes """
-    return torch.tensor([lettre2id[c] for c in normalize(s)])
-
-def code2string(t):
-    """ Transformation d'une liste d'indexes en chaîne de caractères """
-    if type(t) !=list:
-        t = t.tolist()
-    return ''.join(id2lettre[i] for i in t)
-
 class TrumpDataset(Dataset):
     def __init__(self,text,maxsent=None,maxlen=None):
         """  Dataset pour les tweets de Trump
@@ -94,8 +106,6 @@ class TrumpDataset(Dataset):
         t = string2code(self.phrases[i])
         t = torch.cat([torch.zeros(self.MAX_LEN-t.size(0),dtype=torch.long),t])
         return t[:-1],t[1:]
-
-
 
 
 def save_checkpoint(state, filename="checkpoint.pth.tar"):
@@ -160,3 +170,25 @@ def generate_text(model, embedding, start_string="Trump", generation_length=100,
 
     return generated_text
 
+
+class GRUModel(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super().__init__()
+        self.gru = nn.GRU(input_dim, hidden_dim) #oui j'ai la grosse flemme 
+        self.decoder = nn.Linear(hidden_dim, output_dim) 
+
+    def forward(self, x, hidden):
+        output, hidden = self.gru(x, hidden)
+        decoded = self.decoder(output)
+        return decoded, hidden
+
+class LSTMModel(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super().__init__()
+        self.lstm = nn.LSTM(input_dim, hidden_dim)
+        self.decoder = nn.Linear(hidden_dim, output_dim)
+
+    def forward(self, x, hidden):
+        output, (hidden, cell_state) = self.lstm(x, hidden)
+        decoded = self.decoder(output)
+        return decoded, hidden

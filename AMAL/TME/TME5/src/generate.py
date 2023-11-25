@@ -1,12 +1,10 @@
-from textloader import string2code, id2lettre
+from textloader import *
 import math
 import torch
-from tp5 import *
+from utils import temperature_sampling, device
 
 #  TODO:  Ce fichier contient les différentes fonction de génération
-
-
-def generate(rnn, emb, decoder, eos, start="", maxlen=200):
+def generate(model, embedding,  eos= 1, start_string="Trump", generation_length=100, temperature=0.5):
     """
     Generates a sequence using an RNN. The sequence starts with 'start' (or empty if start is not provided) and continues until the 'eos' token is generated or maxlen is reached.
     
@@ -21,30 +19,45 @@ def generate(rnn, emb, decoder, eos, start="", maxlen=200):
     Returns:
     * str: The generated sequence.
     """
-    sequence = start
-    hidden = None
-    str = start
+    input_eval = string2code(start_string).to(device)  # Convert starting string to tensor
+    input_eval = input_eval.unsqueeze(0)  # Add batch dimension
 
-    for _ in range(maxlen):
-        input_tensor = torch.tensor([string2code(sequence[-1])]) if sequence else torch.tensor([0])
-        embedded = emb(input_tensor)
-        output, hidden = rnn(embedded, hidden) if hidden is not None else rnn(embedded)
-        logits = decoder(output)
-        next_char_idx = temperature_sampling(logits, temperature)
-        next_char_idx = next_char_idx.squeeze().tolist()  # Convert to list
+    generated_text = start_string
 
-        # Check if it's a single integer, convert to list if so
-        if isinstance(next_char_idx, int):
-            next_char_idx = [next_char_idx]
+    model.eval()  # Evaluation mode
 
-        next_char = id2lettre(next_char_idx)
+    with torch.no_grad():
+        h = torch.zeros([1, model.latent_dim], device=input_eval.device)  # Initialize hidden state
 
-        str += next_char
+        for i in range(generation_length):
+            # Update hidden state
+            h = model.one_step(embedding(input_eval[:, -1]).float(), h)
 
-        if next_char_idx == eos:
-            break
+            # Get logits from the hidden state
+            logits = model.decode(h)
 
-    return str
+            # Apply temperature sampling
+            next_char_idx = temperature_sampling(logits, temperature)
+            if next_char_idx==eos:
+                break
+            next_char_idx = next_char_idx.squeeze().tolist()  # Convert to list
+
+            # Check if it's a single integer, convert to list if so
+            if isinstance(next_char_idx, int):
+                next_char_idx = [next_char_idx]
+
+            next_char = code2string(next_char_idx)
+
+            generated_text += next_char
+
+            # Update input for next generation step
+            next_char_tensor = torch.tensor([next_char_idx], device=input_eval.device)
+            input_eval = torch.cat((input_eval, next_char_tensor), dim=1)
+
+    return generated_text
+
+
+
 
 def generate_beam(rnn, emb, decoder, eos, k, start="", maxlen=200):
     """
