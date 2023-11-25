@@ -74,10 +74,10 @@ class TrumpDataset(Dataset):
 DIM_INPUT = 1
 DIM_OUTPUT = len(id2lettre)
 BATCH_SIZE = 256  # or as high as your GPU can handle without running out of memory
-HIDDEN_SIZE = 20
+HIDDEN_SIZE = 100
 lr = 0.005
 total_epoch = 33
-MAX_LEN = 50
+MAX_LEN = 120
 
 criterion = nn.CrossEntropyLoss()
 data_trump = DataLoader(
@@ -211,7 +211,7 @@ def generate(model_name, lenght=45, prompt='Trump:'):
     print(code2string(output))
     """
     
-model_name = "model_oh_2"
+model_name = "120100"
 torch.save(model.state_dict(), PATH+f"{model_name}.pt")
 train(model_name)
 generate(model_name)

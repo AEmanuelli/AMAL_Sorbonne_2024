@@ -75,11 +75,11 @@ def load_checkpoint(checkpoint_path, model, optimizer):
 PATH = "AMAL/TME/TME4/data/"
 DIM_INPUT = len(id2lettre)
 DIM_OUTPUT = len(id2lettre)
-BATCH_SIZE = 128
-hidden_size = 250
-lr = 3e-4
+BATCH_SIZE = 100
+hidden_size = 100
+lr = 5e-4
 total_epoch = 500
-max_len = 60
+max_len = 80
 data_trump = DataLoader(TrumpDataset(open(PATH+"trump_full_speech.txt","rb").read().decode(),maxlen=max_len), batch_size= BATCH_SIZE, shuffle=True)
 
 model = RNN(DIM_INPUT, hidden_size, DIM_OUTPUT, batch_first=True
@@ -98,6 +98,43 @@ def load_checkpoint(checkpoint_path, model, optimizer):
         optimizer.load_state_dict(checkpoint['optimizer'])
         return checkpoint['epoch']
     return 0
+
+
+# def generate_text(seed, length=100):
+#     model.eval()
+#     generated = seed
+#     input_seq = string2code(seed).unsqueeze(0)
+#     input_seq = nn.functional.one_hot(input_seq, num_classes=DIM_INPUT).to(device).float()
+
+#     with torch.no_grad():
+#         for i in range(length):  # Use 'i' for iteration count
+#             h = torch.zeros(x.size(0), hidden_size, device=device)
+#             h = model(input_seq, h)
+#             output = h[0, -1] / 1  # Apply temperature
+#             probabilities = torch.nn.functional.softmax(output, dim=0)
+#             next_char_idx = torch.multinomial(probabilities, 1).item()
+#             next_char_idx = max(0, min(next_char_idx, DIM_INPUT - 1))
+#             next_char = id2lettre.get(next_char_idx, '')  # Safe retrieval from dictionar
+
+#             generated += next_char
+#             next_input = torch.tensor([[next_char_idx]], device=device)
+#             next_input = nn.functional.one_hot(next_input, num_classes=DIM_INPUT).float()
+#             input_seq = torch.cat([input_seq, next_input], dim=1)
+
+#     return generated
+def generate(model):
+    # model.load_state_dict(torch.load(PATH+f"{model_name}.pt"))
+    for _ in range(2):
+        h = torch.zeros(
+            (1, hidden_size), device=device
+        )
+        generated = [torch.tensor(torch.randint(len(lettre2id), (1,))).to(device)]
+        model.eval()
+        for i in range(max_len):
+            h = model.one_step(nn.functional.one_hot(generated[-1], num_classes=len(lettre2id)).float(), h)
+            generated.append(model.decode(h).argmax(1))
+        generated = torch.stack(generated[1:])
+        print("".join([id2lettre[int(i)] for i in generated.squeeze()]))
 
 def train(model, data_loader, criterion, optimizer):
     checkpoint_path = PATH + f"{model_name}.pth.tar"
@@ -129,6 +166,7 @@ def train(model, data_loader, criterion, optimizer):
             optimizer.step()
         print(code2string(y[0,:,:].argmax(1)))
         print(code2string(y_hat[0,:,:].argmax(1)))
+        print(generate(model))
         avg_loss = total_loss / len(data_loader)
         print(f'Epoch {epoch + 1}/{total_epoch}, Loss: {avg_loss:.4f}')
         if epoch % 5 == 0 or epoch == total_epoch - 1:
@@ -171,30 +209,9 @@ def train(model, data_loader, criterion, optimizer):
 #             'optimizer_state_dict': state.optim.state_dict()
 #         }, fp)
 
-def generate_text(seed, length=100):
-    model.eval()
-    generated = seed
-    input_seq = string2code(seed).unsqueeze(0)
-    input_seq = nn.functional.one_hot(input_seq, num_classes=DIM_INPUT).to(device).float()
 
-    with torch.no_grad():
-        for i in range(length):  # Use 'i' for iteration count
-            output = model(input_seq)
-            output = output[0, -1] / 1  # Apply temperature
-            probabilities = torch.nn.functional.softmax(output, dim=0)
-            next_char_idx = torch.multinomial(probabilities, 1).item()
-            next_char_idx = max(0, min(next_char_idx, DIM_INPUT - 1))
-            next_char = id2lettre.get(next_char_idx, '')  # Safe retrieval from dictionar
-
-            generated += next_char
-            next_input = torch.tensor([[next_char_idx]], device=device)
-            next_input = nn.functional.one_hot(next_input, num_classes=DIM_INPUT).float()
-            input_seq = torch.cat([input_seq, next_input], dim=1)
-
-    return generated
 
 
 # Train and generate text
-model_name = "cparti"
+model_name = "1008005e4"
 train(model, data_trump, criterion, optimizer)
-print(generate_text("America ", 200))
