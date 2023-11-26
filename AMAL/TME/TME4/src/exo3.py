@@ -1,6 +1,4 @@
 from utils import RNN, device, ForecastMetroDataset
-from icecream import ic, install
-install()
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import torch, torchmetrics

@@ -69,7 +69,7 @@ def train(model, data_loader, criterion, optimizer):
                 loss = criterion(y_hat.transpose(1, 2), y.to(device))
                 total_loss += loss.item()
             elif model.__class__.__name__ == "GRUModel":
-                current_batch_size = x.size(1)
+                current_batch_size = x.size(1)# ça fonctionne mais j'ai pas compris pourquoi 
                 hidden = model.init_hidden(current_batch_size)  # Initialize hidden state
                 x = x.to(device)
                 x_embedded = embedding(x).to(device)
