@@ -1,58 +1,91 @@
 from textloader import *
 import math
 import torch
-from utils import temperature_sampling, device
+from utils import *
 
-#  TODO:  Ce fichier contient les différentes fonction de génération
-def generate(model, embedding,  eos= 1, start_string="Trump", generation_length=100, temperature=0.5):
-    """
-    Generates a sequence using an RNN. The sequence starts with 'start' (or empty if start is not provided) and continues until the 'eos' token is generated or maxlen is reached.
-    
-    Args:
-    * rnn (nn.Module): The RNN model.
-    * emb (function): Embedding layer function.
-    * decoder (function): Decoder function that returns the logits of possible outputs.
-    * eos (int): ID of the end-of-sequence token.
-    * start (str): Starting string for the sequence.
-    * maxlen (int): Maximum length of the generated sequence.
+#  TODO:  Ce fichier contient les différentes fonction de génération 
 
-    Returns:
-    * str: The generated sequence.
-    """
+
+def generate(model, embedding, eos=1, start_string="Trump", generation_length=100, temperature=0.5):
     input_eval = string2code(start_string).to(device)  # Convert starting string to tensor
     input_eval = input_eval.unsqueeze(0)  # Add batch dimension
 
     generated_text = start_string
 
     model.eval()  # Evaluation mode
-
     with torch.no_grad():
-        h = torch.zeros([1, model.latent_dim], device=input_eval.device)  # Initialize hidden state
+        # Initialize hidden and cell states for LSTM
+        if isinstance(model, LSTMModel):
+            hidden = torch.zeros(model.num_layers, 1, model.latent_dim).to(device)
+            cell = torch.zeros(model.num_layers, 1, model.latent_dim).to(device)
+            hidden_state = (hidden, cell)
+            for i in range(generation_length):
+                # Get the last character, embed, and add an extra dimension for batch
+                last_char = embedding(input_eval[:, -1]).unsqueeze(0).float()
+            
+                # Forward pass through the model
+                output, hidden_state = model(last_char, hidden_state)
+                output = output.view(-1, model.output_dim)
+                    # Apply temperature sampling to the output logits
+                next_char_idx = temperature_sampling(output, temperature)
+                if next_char_idx == eos:
+                    break
+                next_char_idx = next_char_idx.squeeze().tolist()
 
-        for i in range(generation_length):
-            # Update hidden state
-            h = model.one_step(embedding(input_eval[:, -1]).float(), h)
+                # Convert to string and append
+                next_char = code2string([next_char_idx])
+                generated_text += next_char
 
-            # Get logits from the hidden state
-            logits = model.decode(h)
+                # Update input for next generation step
+                next_char_tensor = torch.tensor([[next_char_idx]], device=device)
+                input_eval = torch.cat((input_eval, next_char_tensor), dim=1)
+        elif isinstance(model, (RNN)):
+            # For RNN and GRU, hidden state only
+            h = torch.zeros([1, model.latent_dim], device=input_eval.device)  # Initialize hidden state
+            for i in range(generation_length):
+                # Update hidden state
+                h = model.one_step(embedding(input_eval[:, -1]).float(), h)
+                logits = model.decode(h)
+                next_char_idx = temperature_sampling(logits, temperature)
+                if next_char_idx==eos:
+                    break
+                next_char_idx = next_char_idx.squeeze().tolist()  # Convert to list
 
-            # Apply temperature sampling
-            next_char_idx = temperature_sampling(logits, temperature)
-            if next_char_idx==eos:
-                break
-            next_char_idx = next_char_idx.squeeze().tolist()  # Convert to list
+                if isinstance(next_char_idx, int):
+                    next_char_idx = [next_char_idx]
 
-            # Check if it's a single integer, convert to list if so
-            if isinstance(next_char_idx, int):
-                next_char_idx = [next_char_idx]
+                next_char = code2string(next_char_idx)
 
-            next_char = code2string(next_char_idx)
+                generated_text += next_char
 
-            generated_text += next_char
+                # Update input for next generation step
+                next_char_tensor = torch.tensor([next_char_idx], device=input_eval.device)
+                input_eval = torch.cat((input_eval, next_char_tensor), dim=1)
+        elif isinstance(model, (GRUModel)):
+                current_batch_size = 1  # For generation, batch size is typically 1
 
-            # Update input for next generation step
-            next_char_tensor = torch.tensor([next_char_idx], device=input_eval.device)
-            input_eval = torch.cat((input_eval, next_char_tensor), dim=1)
+                h = model.init_hidden(current_batch_size)
+                
+                for i in range(generation_length):
+                    # Update hidden state
+                    embedded = embedding(input_eval[:, -1]).float().unsqueeze(0)  # Add batch dimension
+                    output, h = model(embedded, h)
+                    logits = output.squeeze(0)  # Remove batch dimension for sampling
+
+                    next_char_idx = temperature_sampling(logits, temperature)
+                    if next_char_idx == eos:
+                        break
+
+                    next_char_idx = next_char_idx.item()  # Get the actual index value
+                    next_char = code2string([next_char_idx])
+
+                    generated_text += next_char
+
+                    # Update input for next generation step
+                    next_char_tensor = torch.tensor([[next_char_idx]], device=input_eval.device)
+                    input_eval = torch.cat((input_eval, next_char_tensor), dim=1)
+        else:
+            raise ValueError("Unsupported model type.")
 
     return generated_text
 

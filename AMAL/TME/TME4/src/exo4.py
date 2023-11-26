@@ -239,5 +239,5 @@ def train(model, data_loader, criterion, optimizer):
 
 
 # Train and generate text
-model_name = "rebirth"
+model_name = "rebirth_"
 train(model, data_trump, criterion, optimizer)

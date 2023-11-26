@@ -104,7 +104,7 @@ class TrumpDataset(Dataset):
         return len(self.phrases)
     def __getitem__(self,i):
         t = string2code(self.phrases[i])
-        t = torch.cat([torch.zeros(self.MAX_LEN-t.size(0),dtype=torch.long),t])
+        t = torch.cat([t, torch.zeros(self.MAX_LEN - t.size(0), dtype=torch.long)])
         return t[:-1],t[1:]
 
 
@@ -134,7 +134,7 @@ def temperature_sampling(logits, temperature=1.0):
     next_char_idx = torch.multinomial(probs, num_samples=1)
     return next_char_idx
 
-def generate_text(model, embedding, start_string="Trump", generation_length=100, temperature=0.5):
+# def generate_text(model, embedding, start_string="Trump", generation_length=100, temperature=0.5):
     input_eval = string2code(start_string)  # Convert starting string to tensor
     input_eval = input_eval.unsqueeze(0)  # Add batch dimension
 
@@ -172,23 +172,47 @@ def generate_text(model, embedding, start_string="Trump", generation_length=100,
 
 
 class GRUModel(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
+    def __init__(self, input_dim, latent_dim, output_dim):
         super().__init__()
-        self.gru = nn.GRU(input_dim, hidden_dim) #oui j'ai la grosse flemme 
-        self.decoder = nn.Linear(hidden_dim, output_dim) 
+        self.latent_dim = latent_dim
+        self.gru = nn.GRU(input_dim, latent_dim) #oui j'ai la grosse flemme 
+        self.decoder = nn.Linear(latent_dim, output_dim) 
 
     def forward(self, x, hidden):
         output, hidden = self.gru(x, hidden)
         decoded = self.decoder(output)
         return decoded, hidden
+    
+    def init_hidden(self, batch_size):
+        # Initializes hidden state
+        device = next(self.gru.parameters()).device
+        return torch.zeros(1, batch_size, self.latent_dim).to(device)
+
 
 class LSTMModel(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
+    def __init__(self, input_dim, latent_dim, output_dim, num_layers=1):
         super().__init__()
-        self.lstm = nn.LSTM(input_dim, hidden_dim)
-        self.decoder = nn.Linear(hidden_dim, output_dim)
+        self.output_dim = output_dim
+        self.latent_dim = latent_dim
+        self.num_layers = num_layers
+        self.lstm = nn.LSTM(input_dim, latent_dim, num_layers, batch_first=True)
+        self.fc = nn.Linear(latent_dim, output_dim)
 
     def forward(self, x, hidden):
-        output, (hidden, cell_state) = self.lstm(x, hidden)
-        decoded = self.decoder(output)
-        return decoded, hidden
+        out, hidden = self.lstm(x, hidden)
+        # out = self.fc(out[:, -1, :])
+        
+
+        out = out.contiguous().view(-1, self.latent_dim)
+        
+        # Pass output through fully connected layer
+        out = self.fc(out)
+        
+        # Reshape back to [batch_size, seq_len, output_size]
+        out = out.view(x.size(0), x.size(1), -1)
+        return out, hidden
+
+    def init_hidden(self, batch_size):
+        return (torch.zeros(self.num_layers, batch_size, self.latent_dim).to(device),
+                torch.zeros(self.num_layers, batch_size, self.latent_dim).to(device))
+
