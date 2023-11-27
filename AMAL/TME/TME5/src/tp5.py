@@ -53,7 +53,6 @@ def train(model, data_loader, criterion, optimizer):
                 hidden = model.init_hidden(current_batch_size)
                 x = x.to(device)
                 x_embedded = embedding(x).to(device)
-                optimizer.zero_grad()
                 y_hat, hidden = model(x_embedded, hidden)
                 # Detach hidden states from the graph after each batch
                 hidden = tuple([state.detach() for state in hidden])
@@ -109,13 +108,13 @@ EMBEDDING_DIM = 50
 BATCH_SIZE = 128
 hidden_size = 200
 lr = 5e-4
-total_epoch = 5
+total_epoch = 8
 max_len = 60
 data_trump = DataLoader(TrumpDataset(open(PATH+"trump_full_speech.txt","rb").read().decode(), maxlen=max_len), 
                         batch_size=BATCH_SIZE, 
                         shuffle=True
 )
-embedding = nn.Embedding(num_embeddings=DIM_INPUT, embedding_dim=EMBEDDING_DIM)
+embedding = nn.Embedding(num_embeddings=DIM_INPUT, embedding_dim=EMBEDDING_DIM).to(device)
 
 
 
@@ -128,7 +127,6 @@ model_name = "lstm_"
 lstm = LSTMModel(EMBEDDING_DIM, hidden_size, DIM_OUTPUT).to(device)
 optimizer_lstm = torch.optim.Adam(list(lstm.parameters()) + list(embedding.parameters()))
 train(lstm, data_trump, maskedCrossEntropy, optimizer_lstm)
-
 
 model_name = "gru1"
 gru = GRUModel(EMBEDDING_DIM, hidden_size, DIM_OUTPUT).to(device)
