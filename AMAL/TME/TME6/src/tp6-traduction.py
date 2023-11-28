@@ -20,7 +20,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 logging.basicConfig(level=logging.INFO)
 
-FILE = "data/en-fra.txt"
+FILE = "AMAL/TME/TME6/data/en-fra.txt"
 
 writer = SummaryWriter("/tmp/runs/tag-"+time.asctime())
 
@@ -128,3 +128,116 @@ train_loader = DataLoader(datatrain, collate_fn=collate_fn, batch_size=BATCH_SIZ
 test_loader = DataLoader(datatest, collate_fn=collate_fn, batch_size=BATCH_SIZE, shuffle=True)
 
 #  TODO:  Implémenter l'encodeur, le décodeur et la boucle d'apprentissage
+
+class Encoder(nn.Module):
+    def __init__(self, input_size, emb_size, hidden_size):
+        super(Encoder, self).__init__()
+        self.embedding = nn.Embedding(input_size, emb_size)
+        self.gru = nn.GRU(emb_size, hidden_size)
+
+    def forward(self, src):
+        embedded = self.embedding(src)
+        outputs, hidden = self.gru(embedded)
+        return hidden
+
+class Decoder(nn.Module):
+    def __init__(self, output_size, emb_size, hidden_size):
+        super(Decoder, self).__init__()
+        self.embedding = nn.Embedding(output_size, emb_size)
+        self.gru = nn.GRU(emb_size, hidden_size)
+        self.out = nn.Linear(hidden_size, output_size)
+        self.softmax = nn.LogSoftmax(dim=1)
+
+    def forward(self, input, hidden):
+        input = input.unsqueeze(0)
+        embedded = self.embedding(input)
+        output, hidden = self.gru(embedded, hidden)
+        prediction = self.softmax(self.out(output[0]))
+        return prediction, hidden
+
+    def generate(self, hidden, lenseq=None):
+        # Implémentez la génération ici
+        pass
+
+
+def run_epoch(loader, encoder, decoder, loss_fn, optimizer=None, device="cuda"):
+    encoder.to(device)
+    decoder.to(device)
+    if optimizer:
+        encoder.train()
+        decoder.train()
+    else:
+        encoder.eval()
+        decoder.eval()
+
+    total_loss = 0
+    for x, len_x, y, len_y in loader:
+        x, y = x.to(device), y.to(device)
+
+        # Encoder part
+        encoder_hidden = encoder(x)
+        decoder_outputs, _ = decoder(encoder_hidden, y.size(0), target_tensor=y if optimizer else None)
+        loss = loss_fn(decoder_outputs.transpose(1, 2), y)
+        total_loss += loss.item()
+
+        # backward if we are training
+        if optimizer:
+            optimizer[0].zero_grad()
+            optimizer[1].zero_grad()
+            loss.backward()
+            optimizer[0].step()
+            optimizer[1].step()
+
+    return total_loss / len(loader)
+
+
+
+# def train(encoder, decoder, data_loader, encoder_optimizer, decoder_optimizer, criterion, max_length):
+    encoder.train()
+    decoder.train()
+    for src, trg in data_loader:
+        encoder_optimizer.zero_grad()
+        decoder_optimizer.zero_grad()
+
+        hidden = encoder(src)
+        input = trg[0]  # SOS token
+
+        loss = 0
+        for t in range(1, trg.size(0)):
+            output, hidden = decoder(input, hidden)
+            loss += criterion(output, trg[t])
+            teacher_force = random.random() < 0.5
+            input = trg[t] if teacher_force else output.argmax(1)
+
+        loss.backward()
+        encoder_optimizer.step()
+        decoder_optimizer.step()
+
+        # Ajoutez des mesures pour suivre la perte, etc.
+
+SRC_VOCAB_SIZE = len(vocEng)# Taille du vocabulaire source
+TRG_VOCAB_SIZE = len(vocFra) # Taille du vocabulaire cible
+EMB_DIM = 64  
+HID_DIM = 128  
+MAX_LEN = 100
+lr = 0.0025
+lr_encoder = lr
+lr_decoder = lr
+nb_epoch = 50
+
+
+
+encoder = Encoder(SRC_VOCAB_SIZE, EMB_DIM, HID_DIM)
+decoder = Decoder(TRG_VOCAB_SIZE, EMB_DIM, HID_DIM)
+criterion = nn.CrossEntropyLoss(ignore_index=Vocabulary.PAD)
+encoder_optimizer = optim.Adam(encoder.parameters())
+decoder_optimizer = optim.Adam(decoder.parameters())
+
+for epoch in tqdm(range(nb_epoch)):
+    mean_train_loss = run_epoch(train_loader, encoder, decoder, criterion, optimizer=(encoder_optimizer, decoder_optimizer), device=device)
+    mean_test_loss = run_epoch(test_loader, encoder, decoder, criterion, device=device)
+
+    torch.save(encoder, f"encoder_{HID_DIM}_{EMB_DIM}.pt")
+    torch.save(decoder, f"decoder_{HID_DIM}_{EMB_DIM}.pt")
+    print(f"Epoch {epoch}: Train Loss: {mean_train_loss}, Test Loss: {mean_test_loss}")
+
