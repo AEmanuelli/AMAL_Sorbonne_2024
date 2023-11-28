@@ -1,0 +1,36 @@
+https://drive.google.com/drive/folders/1_kcItv_Vj_CQ7Q0Ui2fSwFQnMzVCo5jo
+
+7 étapes pour étudier un événement
+
+Step 1 : definition of the event = (event window, date 0= event date)
+Step 2 : Selection criteria : summary statistics and outliers 
+Step 3 : Normal and abnormal returns : isolation of the movements event related is 2step : compute time series of abnormal return fro each firm 
+        and average those abnormal returns over all the firms in the sample, to try to average out the noise 
+        Abnormal return = observed - expected. C'est dans le expected qu'on utilise du ML
+Step 4 : Estimation procedure 120 days to 250 days to estimate 
+Step 5 : Test Procedure first, then test the null hyopothesis 
+Step 6 : Results = additional tests : robustness ? incidence of outliers ? sensitivity to the choice of estimation window ? 
+Step 7 : Interpretation and conclusion 
+
+First models : 
+    1. The constant mean retrun model returns mean + noise, suimplifying assumptions : mean of the noise = 0, homoscedaticity (the variance of the noise is alwayys the same)
+            + pas d'autocorrélation, l'éspérance du produit du bruit à 2 time step différentes est nulle 
+    2. The Market model : linear relationship between return of the stock and return of the marcket (proxied by an index)
+                        R(i,t) = alpha(i) + beta(i)*R(m,t) + zeta(i,t)
+                        zeta(i,t) modélise le bruit, on garde les mêmes hypothèses que pour le constant mean 
+
+Other models : index model alpha = 0 beta = 1 ; fator models (3 ou 5) avec comme autres régresseurs les paramètres SMB et HML 
+                                        (high minus low : différence entre la moyenne de book to rev entre premier tertile et dernier tertile en terme de taille)
+
+Index qu'on va utiliser : CRISP market portfolio R(p,t) = somme_i(pourcentage de Market value de firm(i) * R(i,t))
+
+Tout les paramètres de totu ces modèels doivent être estimés sur l'estimation window
+
+CAPM
+
+
+1. how to compute abnormal return diff between actual and predicted(params fitted on the estimation window)
+2. equally weighted portfolio of the stocks within the cluster 
+3. runs Why do we focus on the ranks of the return rather than results ()
+standard spec = normal distrib. but if not normal : biased. Alternative to parametric test is non parametric test, positive skewness is to avoid and we know thereis some 
+corrado test. no abnorml return on date 0 : 250+1/2 escape the issue of possible non symmetric distrib

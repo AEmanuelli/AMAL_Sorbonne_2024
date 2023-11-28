@@ -185,7 +185,7 @@ class GRUModel(nn.Module):
     
     def init_hidden(self, batch_size):
         # Initializes hidden state
-        device = next(self.gru.parameters()).device
+        device = next(self.gru.parameters())
         return torch.zeros(1, batch_size, self.latent_dim).to(device)
 
 
