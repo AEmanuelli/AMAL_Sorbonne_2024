@@ -19,7 +19,7 @@ from torch.utils.tensorboard import SummaryWriter
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 MAX_LEN = 50
-BATCH_SIZE = 16
+BATCH_SIZE = 128
 teacher_forcing_ratio = 1.0
 gamma = 0.95  # Facteur de réduction
 logging.basicConfig(level=logging.INFO)
@@ -32,7 +32,20 @@ def normalize(s):
     return re.sub(' +',' ', "".join(c if c in string.ascii_letters else " "
          for c in unicodedata.normalize('NFD', s.lower().strip())
          if  c in string.ascii_letters+" "+string.punctuation)).strip()
-
+def load_model_if_exists(model_path, device, model_type):
+    if model_path.is_file():
+        model = torch.load(model_path, map_location=device)
+        print(f"Loaded model from {model_path}")
+        return model
+    else:
+        if model_type == 'encoder':
+            print("No encoder model found, initializing a new one.")
+            return Encoder(SRC_VOCAB_SIZE, EMB_DIM, HID_DIM)
+        elif model_type == 'decoder':
+            print("No decoder model found, initializing a new one.")
+            return Decoder(TRG_VOCAB_SIZE, EMB_DIM, HID_DIM)
+        else:
+            raise ValueError("Invalid model type specified")
 
 class Vocabulary:
     """Permet de gérer un vocabulaire.
@@ -89,8 +102,6 @@ class Vocabulary:
     def getwords(self, idx: List[int]):
         return [self.getword(i) for i in idx]
 
-
-
 class TradDataset():
     def __init__(self,data,vocOrig,vocDest,adding=True,max_len=10):
         self.sentences =[]
@@ -101,8 +112,6 @@ class TradDataset():
             self.sentences.append((torch.tensor([vocOrig.get(o) for o in orig.split(" ")]+[Vocabulary.EOS]),torch.tensor([vocDest.get(o) for o in dest.split(" ")]+[Vocabulary.EOS])))
     def __len__(self):return len(self.sentences)
     def __getitem__(self,i): return self.sentences[i]
-
-
 
 def collate_fn(batch):
     orig,dest = zip(*batch)
@@ -185,7 +194,16 @@ def temperature_sampling(logits, temperature=1.0):
     # Sample from the probability distribution
     next_char_idx = torch.multinomial(probs, num_samples=1)
     return next_char_idx
-
+def get_sentence(vocabulary, indices):
+    sentence = []
+    for idx in indices:
+        word = vocabulary.getword(idx)
+        if word is None:
+            print(f"Index not found in vocabulary: {idx}")
+            sentence.append("<UNK>")
+        else:
+            sentence.append(word)
+    return ' '.join(sentence)
 
 def run_epoch(loader, encoder, decoder, loss_fn, optimizer=None, device=device):
     encoder.to(device)
@@ -211,7 +229,7 @@ def run_epoch(loader, encoder, decoder, loss_fn, optimizer=None, device=device):
         for t in range(y.size(0)):
             output, encoder_hidden = decoder(input, encoder_hidden)
             outputs[t] = output
-            use_teacher_forcing = random.random() < teacher_forcing_ratio  # 50% chance of using teacher forcing
+            use_teacher_forcing = random.random() < teacher_forcing_ratio
             input = y[t] if use_teacher_forcing else output.argmax(1)
             
         loss = loss_fn(outputs.view(-1, decoder.output_size), y.view(-1))
@@ -220,7 +238,8 @@ def run_epoch(loader, encoder, decoder, loss_fn, optimizer=None, device=device):
             # Print a sample prediction
             sample_output = outputs.argmax(2)[:, 0]
             predicted_sentence = ' '.join([vocFra.getword(idx) for idx in sample_output])
-            target_sentence = ' '.join([vocEng.getword(idx) for idx in x[:, 0]])
+            # In your run_epoch function
+            target_sentence = get_sentence(vocEng, x[:, 0])
             print(f"\ trad prédite: {predicted_sentence}")
             print(f"phrase: {target_sentence}")
         if optimizer:
@@ -231,91 +250,32 @@ def run_epoch(loader, encoder, decoder, loss_fn, optimizer=None, device=device):
             optimizer[1].step()
 
     return total_loss / len(loader)
-
-        
-
-
-
-# def train(encoder, decoder, data_loader, encoder_optimizer, decoder_optimizer, criterion, max_length):
-    encoder.train()
-    decoder.train()
-    for src, trg in data_loader:
-        encoder_optimizer.zero_grad()
-        decoder_optimizer.zero_grad()
-
-        hidden = encoder(src)
-        input = trg[0]  # SOS token
-
-        loss = 0
-        for t in range(1, trg.size(0)):
-            output, hidden = decoder(input, hidden)
-            loss += criterion(output, trg[t])
-            teacher_force = random.random() < 0.5
-            input = trg[t] if teacher_force else output.argmax(1)
-
-        loss.backward()
-        encoder_optimizer.step()
-        decoder_optimizer.step()
-
-        # Ajoutez des mesures pour suivre la perte, etc.
-
-SRC_VOCAB_SIZE = len(vocEng)# Taille du vocabulaire source
-TRG_VOCAB_SIZE = len(vocFra) # Taille du vocabulaire cible
+  
+SRC_VOCAB_SIZE = len(vocEng)
+TRG_VOCAB_SIZE = len(vocFra)# Taille du vocabulaire cible
 EMB_DIM = 128
 HID_DIM = 512
 
-
-lr = 0.0025
+lr = 0.005
 lr_encoder = lr
 lr_decoder = lr
-nb_epoch = 5
+nb_epoch = 50
 
+# Define the paths for the encoder and decoder models
+encoder_path = Path("encoder_{HID_DIM}_{EMB_DIM}.pt")
+decoder_path = Path("decoder_{HID_DIM}_{EMB_DIM}.pt")
 
+encoder = load_model_if_exists(encoder_path, device, 'encoder')
+decoder = load_model_if_exists(decoder_path, device, 'decoder')
 
-encoder = Encoder(SRC_VOCAB_SIZE, EMB_DIM, HID_DIM)
-decoder = Decoder(TRG_VOCAB_SIZE, EMB_DIM, HID_DIM)
 criterion = nn.CrossEntropyLoss(ignore_index=Vocabulary.PAD)
 encoder_optimizer = optim.Adam(encoder.parameters())
 decoder_optimizer = optim.Adam(decoder.parameters())
 
-def save_models(encoder, decoder, encoder_path, decoder_path):
-    torch.save(encoder, encoder_path)
-    torch.save(decoder, decoder_path)
-    print(f"Saved models to {encoder_path} and {decoder_path}")
-
-def load_models(encoder_path, decoder_path, device):
-    if encoder_path.is_file():
-        encoder = torch.load(encoder_path, map_location=device)
-        print(f"Loaded encoder from {encoder_path}")
-    else:
-        print("No encoder model found, initializing a new one.")
-        encoder = Encoder(SRC_VOCAB_SIZE, EMB_DIM, HID_DIM)
-
-    if decoder_path.is_file():
-        decoder = torch.load(decoder_path, map_location=device)
-        print(f"Loaded decoder from {decoder_path}")
-    else:
-        print("No decoder model found, initializing a new one.")
-        decoder = Decoder(TRG_VOCAB_SIZE, EMB_DIM, HID_DIM)
-    
-    return encoder, decoder
-
-# Paths for the models
-encoder_path = Path(f"encoder_{HID_DIM}_{EMB_DIM}.pt")
-decoder_path = Path(f"decoder_{HID_DIM}_{EMB_DIM}.pt")
-
-# Load models before starting the training loop
-encoder, decoder = load_models(encoder_path, decoder_path, device)
-
-# Training loop
 for epoch in tqdm(range(nb_epoch)):
     mean_train_loss = run_epoch(train_loader, encoder, decoder, criterion, optimizer=(encoder_optimizer, decoder_optimizer), device=device)
     mean_test_loss = run_epoch(test_loader, encoder, decoder, criterion, device=device)
     teacher_forcing_ratio *= gamma 
-
-    # Save the models after each epoch
-    save_models(encoder, decoder, encoder_path, decoder_path)
-
+    torch.save(encoder, f"encoder_{HID_DIM}_{EMB_DIM}.pt")
+    torch.save(decoder, f"decoder_{HID_DIM}_{EMB_DIM}.pt")
     print(f"Epoch {epoch}: Train Loss: {mean_train_loss}, Test Loss: {mean_test_loss}")
-
-# %%

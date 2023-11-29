@@ -200,11 +200,11 @@ class Decoder(nn.Module):
         self.out = nn.Linear(hidden_size, output_size)
 
     def forward(self, input, hidden):
-        # Batched input processing
-        embedded = self.embedding(input)  # Shape: [batch_size, emb_size]
-        embedded = embedded.unsqueeze(0)  # Shape: [1, batch_size, emb_size]
+        embedded = self.embedding(input)  # [batch_size, emb_size]
+        embedded = embedded.unsqueeze(0)  # [1, batch_size, emb_size] - One time step at a time
+
         output, hidden = self.gru(embedded, hidden)
-        prediction = self.out(output.squeeze(0))  # Shape: [batch_size, output_size]
+        prediction = self.out(output.squeeze(0))  # Back to [batch_size, output_size]
         return prediction, hidden
 
     def generate(self, hidden, lenseq=50, temperature=1.0):  # Add temperature parameter
@@ -239,16 +239,6 @@ def temperature_sampling(logits, temperature=1.0):
     # Sample from the probability distribution
     next_char_idx = torch.multinomial(probs, num_samples=1)
     return next_char_idx
-def get_sentence(vocabulary, indices):
-    sentence = []
-    for idx in indices:
-        word = vocabulary.getword(idx)
-        if word is None:
-            print(f"Index not found in vocabulary: {idx}")
-            sentence.append("<UNK>")
-        else:
-            sentence.append(word)
-    return ' '.join(sentence)
 
 
 
@@ -277,7 +267,7 @@ def run_epoch(loader, encoder, decoder, loss_fn, optimizer=None, device=device):
         for t in range(y.size(0)):
             output, encoder_hidden = decoder(input, encoder_hidden)
             outputs[t] = output
-            use_teacher_forcing = random.random() < teacher_forcing_ratio  # 50% chance of using teacher forcing
+            use_teacher_forcing = random.random() < teacher_forcing_ratio 
             input = y[t] if use_teacher_forcing else output.argmax(1)
             
         loss = loss_fn(outputs.view(-1, decoder.output_size), y.view(-1))
@@ -301,30 +291,6 @@ def run_epoch(loader, encoder, decoder, loss_fn, optimizer=None, device=device):
 
         
 
-
-
-# def train(encoder, decoder, data_loader, encoder_optimizer, decoder_optimizer, criterion, max_length):
-    encoder.train()
-    decoder.train()
-    for src, trg in data_loader:
-        encoder_optimizer.zero_grad()
-        decoder_optimizer.zero_grad()
-
-        hidden = encoder(src)
-        input = trg[0]  # SOS token
-
-        loss = 0
-        for t in range(1, trg.size(0)):
-            output, hidden = decoder(input, hidden)
-            loss += criterion(output, trg[t])
-            teacher_force = random.random() < 0.5
-            input = trg[t] if teacher_force else output.argmax(1)
-
-        loss.backward()
-        encoder_optimizer.step()
-        decoder_optimizer.step()
-
-        # Ajoutez des mesures pour suivre la perte, etc.
 
 SRC_VOCAB_SIZE = spp.get_piece_size()
 TRG_VOCAB_SIZE = spp.get_piece_size() # Taille du vocabulaire cible
