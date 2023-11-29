@@ -278,11 +278,44 @@ criterion = nn.CrossEntropyLoss(ignore_index=Vocabulary.PAD)
 encoder_optimizer = optim.Adam(encoder.parameters())
 decoder_optimizer = optim.Adam(decoder.parameters())
 
+def save_models(encoder, decoder, encoder_path, decoder_path):
+    torch.save(encoder, encoder_path)
+    torch.save(decoder, decoder_path)
+    print(f"Saved models to {encoder_path} and {decoder_path}")
+
+def load_models(encoder_path, decoder_path, device):
+    if encoder_path.is_file():
+        encoder = torch.load(encoder_path, map_location=device)
+        print(f"Loaded encoder from {encoder_path}")
+    else:
+        print("No encoder model found, initializing a new one.")
+        encoder = Encoder(SRC_VOCAB_SIZE, EMB_DIM, HID_DIM)
+
+    if decoder_path.is_file():
+        decoder = torch.load(decoder_path, map_location=device)
+        print(f"Loaded decoder from {decoder_path}")
+    else:
+        print("No decoder model found, initializing a new one.")
+        decoder = Decoder(TRG_VOCAB_SIZE, EMB_DIM, HID_DIM)
+    
+    return encoder, decoder
+
+# Paths for the models
+encoder_path = Path(f"encoder_{HID_DIM}_{EMB_DIM}.pt")
+decoder_path = Path(f"decoder_{HID_DIM}_{EMB_DIM}.pt")
+
+# Load models before starting the training loop
+encoder, decoder = load_models(encoder_path, decoder_path, device)
+
+# Training loop
 for epoch in tqdm(range(nb_epoch)):
     mean_train_loss = run_epoch(train_loader, encoder, decoder, criterion, optimizer=(encoder_optimizer, decoder_optimizer), device=device)
     mean_test_loss = run_epoch(test_loader, encoder, decoder, criterion, device=device)
     teacher_forcing_ratio *= gamma 
-    torch.save(encoder, f"encoder_{HID_DIM}_{EMB_DIM}.pt")
-    torch.save(decoder, f"decoder_{HID_DIM}_{EMB_DIM}.pt")
+
+    # Save the models after each epoch
+    save_models(encoder, decoder, encoder_path, decoder_path)
+
     print(f"Epoch {epoch}: Train Loss: {mean_train_loss}, Test Loss: {mean_test_loss}")
+
 # %%
