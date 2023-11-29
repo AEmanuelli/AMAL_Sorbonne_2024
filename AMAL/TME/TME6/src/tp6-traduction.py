@@ -1,3 +1,4 @@
+#%%
 import logging
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
@@ -10,14 +11,17 @@ import string
 from tqdm import tqdm
 from pathlib import Path
 from typing import List
-
+import random
 import time
 import re
+import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-
-
+MAX_LEN = 50
+BATCH_SIZE = 16
+teacher_forcing_ratio = 1.0
+gamma = 0.95  # Facteur de réduction
 logging.basicConfig(level=logging.INFO)
 
 FILE = "AMAL/TME/TME6/data/en-fra.txt"
@@ -106,10 +110,6 @@ def collate_fn(batch):
     d_len = torch.tensor([len(d) for d in dest])
     return pad_sequence(orig),o_len,pad_sequence(dest),d_len
 
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
 with open(FILE) as f:
     lines = f.readlines()
 
@@ -118,20 +118,17 @@ idxTrain = int(0.8*len(lines))
 
 vocEng = Vocabulary(True)
 vocFra = Vocabulary(True)
-MAX_LEN=100
-BATCH_SIZE=100
-
 datatrain = TradDataset("".join(lines[:idxTrain]),vocEng,vocFra,max_len=MAX_LEN)
 datatest = TradDataset("".join(lines[idxTrain:]),vocEng,vocFra,max_len=MAX_LEN)
 
-train_loader = DataLoader(datatrain, collate_fn=collate_fn, batch_size=BATCH_SIZE, shuffle=True)
+train_loader = DataLoader(datatrain, collate_fn=collate_fn, batch_size=BATCH_SIZE, shuffle=True, num_workers=3)
 test_loader = DataLoader(datatest, collate_fn=collate_fn, batch_size=BATCH_SIZE, shuffle=True)
 
 #  TODO:  Implémenter l'encodeur, le décodeur et la boucle d'apprentissage
-
+#%%
 class Encoder(nn.Module):
     def __init__(self, input_size, emb_size, hidden_size):
-        super(Encoder, self).__init__()
+        super().__init__()
         self.embedding = nn.Embedding(input_size, emb_size)
         self.gru = nn.GRU(emb_size, hidden_size)
 
@@ -142,27 +139,58 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     def __init__(self, output_size, emb_size, hidden_size):
-        super(Decoder, self).__init__()
+        super().__init__()
+        self.output_size = output_size
         self.embedding = nn.Embedding(output_size, emb_size)
         self.gru = nn.GRU(emb_size, hidden_size)
         self.out = nn.Linear(hidden_size, output_size)
-        self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, input, hidden):
-        input = input.unsqueeze(0)
-        embedded = self.embedding(input)
+        # Batched input processing
+        embedded = self.embedding(input)  # Shape: [batch_size, emb_size]
+        embedded = embedded.unsqueeze(0)  # Shape: [1, batch_size, emb_size]
         output, hidden = self.gru(embedded, hidden)
-        prediction = self.softmax(self.out(output[0]))
+        prediction = self.out(output.squeeze(0))  # Shape: [batch_size, output_size]
         return prediction, hidden
 
-    def generate(self, hidden, lenseq=None):
-        # Implémentez la génération ici
-        pass
+    def generate(self, hidden, lenseq=50, temperature=1.0):  # Add temperature parameter
+        outputs = []
+        input = torch.tensor(Vocabulary.SOS).unsqueeze(0).to(hidden.device)
+
+        for _ in range(lenseq):
+            output, hidden = self.forward(input, hidden)
+            
+            # Use temperature sampling to select the next token
+            top1 = temperature_sampling(output, temperature=temperature)
+            print("Generated token ID:", top1.item())  # Debug print
+            outputs.append(top1.item())
+            input = top1
+
+            if top1.item() == Vocabulary.EOS:
+                break
+
+        return outputs
+
+    
+def temperature_sampling(logits, temperature=1.0):
+    """
+    Apply temperature sampling to logits.
+    """
+    if temperature <= 0:  # Avoid division by zero
+        raise ValueError("Temperature should be greater than 0")
+
+    # Apply temperature
+    probs = F.softmax(logits / temperature, dim=-1)
+
+    # Sample from the probability distribution
+    next_char_idx = torch.multinomial(probs, num_samples=1)
+    return next_char_idx
 
 
-def run_epoch(loader, encoder, decoder, loss_fn, optimizer=None, device="cuda"):
+def run_epoch(loader, encoder, decoder, loss_fn, optimizer=None, device=device):
     encoder.to(device)
     decoder.to(device)
+    
     if optimizer:
         encoder.train()
         decoder.train()
@@ -171,16 +199,30 @@ def run_epoch(loader, encoder, decoder, loss_fn, optimizer=None, device="cuda"):
         decoder.eval()
 
     total_loss = 0
-    for x, len_x, y, len_y in loader:
+    i = 0
+    for x, _, y, _ in tqdm(loader):
+        i+=1
         x, y = x.to(device), y.to(device)
-
-        # Encoder part
         encoder_hidden = encoder(x)
-        decoder_outputs, _ = decoder(encoder_hidden, y.size(0), target_tensor=y if optimizer else None)
-        loss = loss_fn(decoder_outputs.transpose(1, 2), y)
-        total_loss += loss.item()
 
-        # backward if we are training
+        input = torch.tensor([Vocabulary.SOS] * x.size(1)).to(device)
+        outputs = torch.zeros(y.size(0), x.size(1), decoder.output_size).to(device)
+
+        for t in range(y.size(0)):
+            output, encoder_hidden = decoder(input, encoder_hidden)
+            outputs[t] = output
+            use_teacher_forcing = random.random() < teacher_forcing_ratio  # 50% chance of using teacher forcing
+            input = y[t] if use_teacher_forcing else output.argmax(1)
+            
+        loss = loss_fn(outputs.view(-1, decoder.output_size), y.view(-1))
+        total_loss += loss.item()
+        if i%5==0: 
+            # Print a sample prediction
+            sample_output = outputs.argmax(2)[:, 0]
+            predicted_sentence = ' '.join([vocFra.getword(idx) for idx in sample_output])
+            target_sentence = ' '.join([vocEng.getword(idx) for idx in x[:, 0]])
+            print(f"\ trad prédite: {predicted_sentence}")
+            print(f"phrase: {target_sentence}")
         if optimizer:
             optimizer[0].zero_grad()
             optimizer[1].zero_grad()
@@ -189,6 +231,8 @@ def run_epoch(loader, encoder, decoder, loss_fn, optimizer=None, device="cuda"):
             optimizer[1].step()
 
     return total_loss / len(loader)
+
+        
 
 
 
@@ -217,13 +261,14 @@ def run_epoch(loader, encoder, decoder, loss_fn, optimizer=None, device="cuda"):
 
 SRC_VOCAB_SIZE = len(vocEng)# Taille du vocabulaire source
 TRG_VOCAB_SIZE = len(vocFra) # Taille du vocabulaire cible
-EMB_DIM = 64  
-HID_DIM = 128  
-MAX_LEN = 100
+EMB_DIM = 128
+HID_DIM = 512
+
+
 lr = 0.0025
 lr_encoder = lr
 lr_decoder = lr
-nb_epoch = 50
+nb_epoch = 5
 
 
 
@@ -236,8 +281,8 @@ decoder_optimizer = optim.Adam(decoder.parameters())
 for epoch in tqdm(range(nb_epoch)):
     mean_train_loss = run_epoch(train_loader, encoder, decoder, criterion, optimizer=(encoder_optimizer, decoder_optimizer), device=device)
     mean_test_loss = run_epoch(test_loader, encoder, decoder, criterion, device=device)
-
+    teacher_forcing_ratio *= gamma 
     torch.save(encoder, f"encoder_{HID_DIM}_{EMB_DIM}.pt")
     torch.save(decoder, f"decoder_{HID_DIM}_{EMB_DIM}.pt")
     print(f"Epoch {epoch}: Train Loss: {mean_train_loss}, Test Loss: {mean_test_loss}")
-
+# %%
