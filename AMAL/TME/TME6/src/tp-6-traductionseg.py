@@ -225,7 +225,16 @@ class Decoder(nn.Module):
 
         return outputs
 
-    
+def get_sentence(vocabulary, indices):
+    sentence = []
+    for idx in indices:
+        word = vocabulary.getword(idx)
+        if word is None:
+            print(f"Index not found in vocabulary: {idx}")
+            sentence.append("<UNK>")
+        else:
+            sentence.append(word)
+    return ' '.join(sentence)
 def temperature_sampling(logits, temperature=1.0):
     """
     Apply temperature sampling to logits.
@@ -239,9 +248,6 @@ def temperature_sampling(logits, temperature=1.0):
     # Sample from the probability distribution
     next_char_idx = torch.multinomial(probs, num_samples=1)
     return next_char_idx
-
-
-
 
 def run_epoch(loader, encoder, decoder, loss_fn, optimizer=None, device=device):
     encoder.to(device)
