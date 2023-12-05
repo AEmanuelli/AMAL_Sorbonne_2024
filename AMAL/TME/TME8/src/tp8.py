@@ -85,22 +85,24 @@ test_iter = torch.utils.data.DataLoader(test, batch_size=TEST_BATCHSIZE, collate
 # commencer par définir l'embedding
 
 class Model(nn.Module):
-    def __init__(self, conv_channels=[20, 20], fc_size=[20, 2], kernel_size=3, stride=1, pooling_kernel=2, pooling_stride = 1):
+    def __init__(self, conv_channels=[20, 20], kernel_size=3, stride=1, pooling_kernel=2, pooling_stride = 1):
         super().__init__()
         self.convolution = nn.Sequential(
             nn.Conv1d(in_channels=conv_channels[0], out_channels=conv_channels[1], kernel_size=kernel_size, stride=stride),
             nn.ReLU(),
             nn.MaxPool1d(kernel_size=pooling_kernel, stride = pooling_stride)
         )
-        self.fc = nn.Linear(fc_size[0], fc_size[1])
+        # Adjust the calculation of input_size_fc
+        conv_output_size = ((50 - kernel_size) // stride + 1)
+        pool_output_size = (conv_output_size - pooling_kernel) // pooling_stride + 1
+        input_size_fc = conv_channels[1] * pool_output_size
+        self.fc = nn.Linear(input_size_fc, 3)
 
     def forward(self, x):
         return self.fc(self.convolution(x))
 
-
-import tensorflow as tf
-print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-
-model = Model()  
-input_tensor = torch.randn(12,12,20) #3D batch, length, embedding
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = Model().to(device)
+input_tensor = torch.randn(32, 20, 50).to(device)  # batch, channels, length
 output = model(input_tensor)
+print(output.shape)  # Should be [32, 3] representing the output for each item in the batch
