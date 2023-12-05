@@ -99,7 +99,11 @@ class Model(nn.Module):
         self.fc = nn.Linear(input_size_fc, 3)
 
     def forward(self, x):
-        return self.fc(self.convolution(x))
+        x = self.convolution(x)
+        print(x.shape)
+        x = x.view(x.size(0), -1)
+        print(x.shape)
+        return self.fc(x)#eturn self.fc(self.convolution(x))
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = Model().to(device)
