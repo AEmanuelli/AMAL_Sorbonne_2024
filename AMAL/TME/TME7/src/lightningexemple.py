@@ -178,3 +178,19 @@ trainer.fit(model,data)
 trainer.test(model,data)
 
 # !tensorboard --logdir=/tmp/runs/lightning_logs
+
+
+
+def on_after_backward(self):
+    for name, param in self.named_parameters():
+        if "weight" in name:
+            self.logger.experiment.add_histogram(name, param, self.current_epoch)
+def on_after_backward(self):
+    for name, param in self.named_parameters():
+        if param.grad is not None:
+            self.logger.experiment.add_histogram(f"{name}_grad", param.grad, self.current_epoch)
+def validation_step(self, batch, batch_idx):
+    # ... Votre code existant pour calculer la loss et l'accuracy ...
+    entropy = calculate_entropy(yhat)  # Utilisez la fonction calculate_entropy définie précédemment
+    self.log("val_entropy", entropy, on_step=False, on_epoch=True)
+    return logs
